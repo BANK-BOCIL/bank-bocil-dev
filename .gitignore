@@ -12,7 +12,6 @@
 .swiftpm/
 migrate_working_dir/
 
-
 # IntelliJ related
 *.iml
 *.ipr
@@ -45,5 +44,18 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 
-# Node.js / Javascript related
-/node_modules/
+# Android build cache and local settings
+/android/app/.cxx/
+/android/settings.gradle
+
+# Flutter auto-generated plugin files for desktop platforms
+/linux/flutter/generated_plugin_registrant.cc
+/linux/flutter/generated_plugin_registrant.h
+/linux/flutter/generated_plugins.cmake
+/windows/flutter/generated_plugin_registrant.cc
+/windows/flutter/generated_plugin_registrant.h
+/windows/flutter/generated_plugins.cmake
+
+# Flutter auto-generated plugin files for macOS
+/macos/Flutter/GeneratedPluginRegistrant.swift
+

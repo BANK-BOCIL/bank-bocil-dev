@@ -78,4 +78,12 @@ class Mission {
       metadata: data['metadata'] as Map<String, dynamic>?,
     );
   }
+
+  bool get isActive => status == MissionStatus.active;
+
+  bool get isOverdue => (deadline != null && DateTime.now().isAfter(deadline!)) && isActive;
+
+  get isCompleted => status == MissionStatus.completed;
+
+
 }

@@ -49,6 +49,10 @@ class SavingsGoal {
       'isShortTerm': isShortTerm,
     };
   }
+  double get progressPercentage {
+    if (targetAmount == 0) return 0;
+    return (currentAmount / targetAmount) * 100;
+  }
 
   factory SavingsGoal.fromFirestore(
       DocumentSnapshot<Map<String, dynamic>> doc) {
