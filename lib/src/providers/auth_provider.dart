@@ -116,7 +116,6 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  // PERBAIKAN: Mengembalikan User? untuk konsistensi.
   Future<User?> loginChild({
     required String childCode,
     required String childName,
@@ -125,47 +124,43 @@ class AuthProvider extends ChangeNotifier {
     _setLoading(true);
     _clearError();
     try {
-      final querySnapshot = await _firestore
-          .collection('users')
-          .where('role', isEqualTo: 'UserType.parent')
-          .where('childCode', isEqualTo: childCode.toUpperCase())
-          .limit(1)
-          .get();
+      // 1. Lakukan sign-in anonim DULU untuk mendapatkan UID yang stabil untuk perangkat ini
+      final userCredential = await _auth.signInAnonymously();
+      final childUid = userCredential.user!.uid;
 
-      if (querySnapshot.docs.isEmpty) {
-        _setError('Kode anak tidak valid atau tidak ditemukan.');
-        return null;
-      }
+      // 2. Cek apakah dokumen untuk UID ini sudah ada di Firestore
+      final userDocRef = _firestore.collection('users').doc(childUid);
+      final userDocSnapshot = await userDocRef.get();
 
-      final parentDoc = querySnapshot.docs.first;
-      final parentId = parentDoc.id;
-
-      // Cek apakah anak dengan nama & parentId yang sama sudah ada
-      final existingChildQuery = await _firestore
-          .collection('users')
-          .where('parentId', isEqualTo: parentId)
-          .where('name', isEqualTo: childName)
-          .limit(1)
-          .get();
-
-      User targetUser;
-      if (existingChildQuery.docs.isNotEmpty) {
-        // Anak sudah ada, cukup login dan fetch datanya.
-        // NOTE: Ini akan membuat sesi anonim baru. Untuk login di perangkat
-        // yang sama, Firebase secara otomatis akan menggunakan UID anonim yang sama.
-        // Untuk perangkat berbeda, akan dibuat UID baru yang tidak cocok dengan doc ID.
-        // Ini adalah batasan dari pendekatan sederhana ini.
-        final existingChildDoc = existingChildQuery.docs.first;
-        targetUser = User.fromFirestore(existingChildDoc.data()!);
-        await _auth.signInAnonymously();
-        _currentUser = targetUser;
+      if (userDocSnapshot.exists) {
+        // Jika user sudah ada, cukup load datanya
+        _currentUser = User.fromFirestore(userDocSnapshot.data()!);
+        // Anda bisa menambahkan logika update `lastLoginAt` di sini jika perlu
+        await userDocRef.update({'lastLoginAt': DateTime.now()});
       } else {
-        // Anak belum ada, buat user baru
-        final childCredential = await _auth.signInAnonymously();
-        final childUid = childCredential.user!.uid;
+        // Jika user belum ada, ini adalah pendaftaran pertama kali
+        // Cari parent berdasarkan childCode
+        final querySnapshot = await _firestore
+            .collection('users')
+            .where('role', isEqualTo: 'UserType.parent')
+            .where('childCode', isEqualTo: childCode.toUpperCase())
+            .limit(1)
+            .get();
+
+        if (querySnapshot.docs.isEmpty) {
+          _setError('Kode anak tidak valid atau tidak ditemukan.');
+          // Hapus user anonim yang baru dibuat karena pendaftaran gagal
+          await userCredential.user?.delete();
+          return null;
+        }
+
+        final parentDoc = querySnapshot.docs.first;
+        final parentId = parentDoc.id;
         final ageTier = _getAgeTierFromAge(age);
-        targetUser = User(
-          id: childUid,
+
+        // Buat objek user baru
+        final newUser = User(
+          id: childUid, // Gunakan UID dari hasil sign-in anonim
           name: childName,
           type: UserType.child,
           parentId: parentId,
@@ -174,12 +169,12 @@ class AuthProvider extends ChangeNotifier {
           createdAt: DateTime.now(),
           lastLoginAt: DateTime.now(),
         );
-        await _firestore
-            .collection('users')
-            .doc(childUid)
-            .set(targetUser.toFirestore());
-        _currentUser = targetUser;
+
+        // Simpan user baru ke Firestore
+        await userDocRef.set(newUser.toFirestore());
+        _currentUser = newUser;
       }
+
       notifyListeners();
       return _currentUser;
     } catch (e) {

@@ -1,9 +1,12 @@
 // lib/src/screens/auth/parent_auth_screen.dart
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/constants.dart';
 import '../../core/helpers.dart';
 import '../../providers/auth_provider.dart';
+// PERBAIKAN: Impor layar tujuan
+import '../parent/parent_main_screen.dart';
 
 class ParentAuthScreen extends StatefulWidget {
   const ParentAuthScreen({super.key});
@@ -20,7 +23,6 @@ class _ParentAuthScreenState extends State<ParentAuthScreen> {
   final _passwordController = TextEditingController();
   final _nameController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
-  // PERBAIKAN: Tambahkan controller untuk umur
   final _ageController = TextEditingController();
 
   bool _obscurePassword = true;
@@ -32,7 +34,7 @@ class _ParentAuthScreenState extends State<ParentAuthScreen> {
     _passwordController.dispose();
     _nameController.dispose();
     _confirmPasswordController.dispose();
-    _ageController.dispose(); // PERBAIKAN: dispose controller umur
+    _ageController.dispose();
     super.dispose();
   }
 
@@ -43,35 +45,42 @@ class _ParentAuthScreenState extends State<ParentAuthScreen> {
     });
   }
 
+  // --- PERBAIKAN UTAMA ADA DI SINI ---
   Future<void> _handleSubmit() async {
-    // Sembunyikan keyboard
     FocusScope.of(context).unfocus();
     if (!_formKey.currentState!.validate()) return;
 
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
 
-    if (_isLogin) {
-      await authProvider.loginParent(
-        email: _emailController.text.trim(),
-        password: _passwordController.text,
-      );
-    } else {
-      // PERBAIKAN: Ambil umur dari controller
-      await authProvider.registerParent(
-        email: _emailController.text.trim(),
-        password: _passwordController.text,
-        name: _nameController.text.trim(),
-        age: int.tryParse(_ageController.text.trim()) ?? 0,
-      );
-    }
+    // Simpan hasil dari fungsi login/register
+    final user = _isLogin
+        ? await authProvider.loginParent(
+            email: _emailController.text.trim(),
+            password: _passwordController.text,
+          )
+        : await authProvider.registerParent(
+            email: _emailController.text.trim(),
+            password: _passwordController.text,
+            name: _nameController.text.trim(),
+            age: int.tryParse(_ageController.text.trim()) ?? 0,
+          );
 
-    if (mounted && authProvider.error != null) {
-      Helpers.showSnackBar(context, authProvider.error!);
+    if (mounted) {
+      if (user != null) {
+        // Jika user tidak null (login/register berhasil), lakukan navigasi
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (context) => const ParentMainScreen()),
+        );
+      } else if (authProvider.error != null) {
+        // Jika gagal, tampilkan error
+        Helpers.showSnackBar(context, authProvider.error!);
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    // ... sisa UI Anda tidak perlu diubah ...
     return Scaffold(
       appBar: AppBar(
         title: Text(_isLogin ? 'Masuk Akun Orang Tua' : 'Buat Akun Orang Tua'),
@@ -86,7 +95,6 @@ class _ParentAuthScreenState extends State<ParentAuthScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // PERBAIKAN: Tambahkan field umur hanya saat registrasi
                 if (!_isLogin) ...[
                   TextFormField(
                     controller: _nameController,
@@ -111,7 +119,6 @@ class _ParentAuthScreenState extends State<ParentAuthScreen> {
                   },
                 ),
                 Helpers.verticalSpace(AppConstants.spacing16),
-                // PERBAIKAN: Tambahkan input umur hanya untuk registrasi
                 if (!_isLogin) ...[
                   TextFormField(
                     controller: _ageController,
