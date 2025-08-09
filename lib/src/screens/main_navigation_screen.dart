@@ -67,7 +67,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   List<Widget> _getPages(ThemeColor theme) {
     if (widget.user.type == UserType.parent) {
       return [
-        ParentMainScreen(user: widget.user),
+        const ParentMainScreen(),
         // Halaman placeholder orang tua
         _buildPlaceholderPage('Anak-anak', AppColors.parentPrimary),
         _buildPlaceholderPage('Transaksi', AppColors.parentPrimary),

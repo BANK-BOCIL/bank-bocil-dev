@@ -1,6 +1,8 @@
 // lib/src/screens/parent/parent_main_screen.dart
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../auth/auth_screen.dart';
 import '../../providers/auth_provider.dart';
 import '../../core/constants.dart';
 import '../../core/helpers.dart';
@@ -24,10 +26,12 @@ class ParentMainScreen extends StatelessWidget {
                 onPressed: () async {
                   await authProvider.logout();
                   if (context.mounted) {
-                    Navigator.of(context).pushReplacement(
+                    Navigator.of(context).pushAndRemoveUntil(
                       MaterialPageRoute(
                         builder: (context) => const AuthScreen(),
                       ),
+                      (Route<dynamic> route) =>
+                          false, // Hapus semua rute sebelumnya
                     );
                   }
                 },
@@ -141,73 +145,5 @@ class ParentMainScreen extends StatelessWidget {
   }
 }
 
-// --- FIX: Delegate now accepts a PreferredSizeWidget ---
-class _SliverTabBarDelegate extends SliverPersistentHeaderDelegate {
-  final PreferredSizeWidget _tabBar;
-
-  _SliverTabBarDelegate(this._tabBar);
-
-  @override
-  double get minExtent => _tabBar.preferredSize.height;
-  @override
-  double get maxExtent => _tabBar.preferredSize.height;
-
-  @override
-  Widget build(
-      BuildContext context, double shrinkOffset, bool overlapsContent) {
-    return Material(
-      elevation: 2.0,
-      shadowColor: AppColors.grey200,
-      child: _tabBar,
-    );
-  }
-
-  @override
-  bool shouldRebuild(_SliverTabBarDelegate oldDelegate) {
-    return false;
-  }
-
-  Widget _buildStatCard({
-    required String title,
-    required String value,
-    required Color color,
-    required IconData icon,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(AppConstants.spacing16),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(AppConstants.radiusMedium),
-        border: Border.all(color: color.withOpacity(0.3)),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, color: color),
-          Helpers.horizontalSpace(AppConstants.spacing16),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.grey800,
-                ),
-              ),
-              Helpers.verticalSpace(AppConstants.spacing4),
-              Text(
-                value,
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: color,
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
+// PERBAIKAN: Seluruh class _SliverTabBarDelegate dan method _buildStatCard
+// yang tidak terpakai telah dihapus dari file ini untuk menjaga kebersihan kode.
