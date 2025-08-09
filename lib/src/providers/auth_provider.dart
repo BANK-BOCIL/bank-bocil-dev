@@ -1,336 +1,209 @@
+// lib/src/providers/auth_provider.dart
+
 import 'package:flutter/foundation.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:convert';
+import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:math';
-import '../models/auth_user.dart';
-import '../core/helpers.dart';
+import '../models/user.dart'; // Pastikan model User sudah ada dan benar
 
 class AuthProvider extends ChangeNotifier {
-  AuthUser? _currentUser;
+  User? _currentUser;
   bool _isLoading = false;
   String? _error;
 
-  // Storage keys
-  static const String _usersKey = 'auth_users';
-  static const String _currentUserKey = 'current_user';
+  final firebase_auth.FirebaseAuth _auth = firebase_auth.FirebaseAuth.instance;
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  AuthUser? get currentUser => _currentUser;
+  User? get currentUser => _currentUser;
   bool get isLoading => _isLoading;
   String? get error => _error;
-  bool get isAuthenticated => _currentUser != null;
+  bool get isAuthenticated => _auth.currentUser != null;
 
-  // Initialize auth provider
   Future<void> initialize() async {
     _setLoading(true);
-    try {
-      await _loadCurrentUser();
-    } catch (e) {
-      _setError('Failed to initialize auth: $e');
-    } finally {
-      _setLoading(false);
+    final firebaseUser = _auth.currentUser;
+    if (firebaseUser != null) {
+      await _fetchUserData(firebaseUser.uid);
     }
+    _setLoading(false);
   }
 
-  // Load current user from storage
-  Future<void> _loadCurrentUser() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final userJson = prefs.getString(_currentUserKey);
-
-      if (userJson != null) {
-        final userData = json.decode(userJson);
-        _currentUser = AuthUser.fromJson(userData);
-        notifyListeners();
-      }
-    } catch (e) {
-      debugPrint('Error loading current user: $e');
+  Future<void> _fetchUserData(String uid) async {
+    final userDoc = await _firestore.collection('users').doc(uid).get();
+    if (userDoc.exists) {
+      _currentUser = User.fromFirestore(userDoc.data()!);
+    } else {
+      _currentUser = null;
     }
-  }
-
-  // Save current user to storage
-  Future<void> _saveCurrentUser() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      if (_currentUser != null) {
-        await prefs.setString(
-            _currentUserKey, json.encode(_currentUser!.toJson()));
-      } else {
-        await prefs.remove(_currentUserKey);
-      }
-    } catch (e) {
-      debugPrint('Error saving current user: $e');
-    }
-  }
-
-  // Get all users from storage
-  Future<List<AuthUser>> _getAllUsers() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final usersJson = prefs.getString(_usersKey);
-
-      if (usersJson != null) {
-        final List<dynamic> usersList = json.decode(usersJson);
-        return usersList
-            .map((userData) => AuthUser.fromJson(userData))
-            .toList();
-      }
-      return [];
-    } catch (e) {
-      debugPrint('Error loading users: $e');
-      return [];
-    }
-  }
-
-  // Save all users to storage
-  Future<void> _saveAllUsers(List<AuthUser> users) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final usersJson =
-          json.encode(users.map((user) => user.toJson()).toList());
-      await prefs.setString(_usersKey, usersJson);
-    } catch (e) {
-      debugPrint('Error saving users: $e');
-    }
-  }
-
-  // Generate random child code
-  String _generateChildCode() {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    final random = Random();
-    return List.generate(6, (index) => chars[random.nextInt(chars.length)])
-        .join();
-  }
-
-  // Register parent
-  Future<bool> registerParent({
-    required String email,
-    required String password,
-    required String name,
-  }) async {
-    _setLoading(true);
-    _clearError();
-
-    try {
-      // Validate input
-      if (email.isEmpty || !Helpers.isValidEmail(email)) {
-        _setError('Email tidak valid');
-        return false;
-      }
-
-      if (password.isEmpty || password.length < 6) {
-        _setError('Password minimal 6 karakter');
-        return false;
-      }
-
-      if (name.isEmpty) {
-        _setError('Nama tidak boleh kosong');
-        return false;
-      }
-
-      // Check if email already exists
-      final existingUsers = await _getAllUsers();
-      if (existingUsers
-          .any((user) => user.email.toLowerCase() == email.toLowerCase())) {
-        _setError('Email sudah terdaftar');
-        return false;
-      }
-
-      // Create new parent user
-      final newUser = AuthUser(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
-        email: email.toLowerCase(),
-        password: password, // In real app, this should be hashed
-        name: name,
-        role: UserRole.parent,
-        childCode: _generateChildCode(),
-        createdAt: DateTime.now(),
-      );
-
-      // Save user
-      existingUsers.add(newUser);
-      await _saveAllUsers(existingUsers);
-
-      // Auto login
-      _currentUser = newUser;
-      await _saveCurrentUser();
-      notifyListeners();
-
-      return true;
-    } catch (e) {
-      _setError('Gagal mendaftar: $e');
-      return false;
-    } finally {
-      _setLoading(false);
-    }
-  }
-
-  // Login parent
-  Future<bool> loginParent({
-    required String email,
-    required String password,
-  }) async {
-    _setLoading(true);
-    _clearError();
-
-    try {
-      // Validate input
-      if (email.isEmpty || password.isEmpty) {
-        _setError('Email dan password tidak boleh kosong');
-        return false;
-      }
-
-      // Find user
-      final users = await _getAllUsers();
-      final user = users.firstWhere(
-        (user) =>
-            user.email.toLowerCase() == email.toLowerCase() &&
-            user.role == UserRole.parent &&
-            user.password == password,
-        orElse: () => throw Exception('User not found'),
-      );
-
-      // Update last login
-      final updatedUser = user.copyWith(lastLoginAt: DateTime.now());
-      final userIndex = users.indexWhere((u) => u.id == user.id);
-      users[userIndex] = updatedUser;
-      await _saveAllUsers(users);
-
-      // Set current user
-      _currentUser = updatedUser;
-      await _saveCurrentUser();
-      notifyListeners();
-
-      return true;
-    } catch (e) {
-      _setError('Email atau password salah');
-      return false;
-    } finally {
-      _setLoading(false);
-    }
-  }
-
-  // Login child with code
-  Future<bool> loginChild({
-    required String childCode,
-    required String childName,
-  }) async {
-    _setLoading(true);
-    _clearError();
-
-    try {
-      // Validate input
-      if (childCode.isEmpty || childName.isEmpty) {
-        _setError('Kode dan nama tidak boleh kosong');
-        return false;
-      }
-
-      // Find parent with matching child code
-      final users = await _getAllUsers();
-      final parent = users.firstWhere(
-        (user) =>
-            user.role == UserRole.parent &&
-            user.childCode?.toUpperCase() == childCode.toUpperCase(),
-        orElse: () => throw Exception('Parent not found'),
-      );
-
-      // Check if child already exists
-      final existingChild = users.firstWhere(
-        (user) =>
-            user.role == UserRole.child &&
-            user.parentId == parent.id &&
-            user.name.toLowerCase() == childName.toLowerCase(),
-        orElse: () => AuthUser(
-          id: '',
-          email: '',
-          name: '',
-          role: UserRole.child,
-          createdAt: DateTime.now(),
-        ),
-      );
-
-      AuthUser childUser;
-      if (existingChild.id.isEmpty) {
-        // Create new child user
-        childUser = AuthUser(
-          id: DateTime.now().millisecondsSinceEpoch.toString(),
-          email:
-              '${parent.email}_child_${DateTime.now().millisecondsSinceEpoch}',
-          name: childName,
-          role: UserRole.child,
-          parentId: parent.id,
-          createdAt: DateTime.now(),
-          lastLoginAt: DateTime.now(),
-        );
-        users.add(childUser);
-      } else {
-        // Update existing child
-        childUser = existingChild.copyWith(lastLoginAt: DateTime.now());
-        final childIndex = users.indexWhere((u) => u.id == existingChild.id);
-        users[childIndex] = childUser;
-      }
-
-      await _saveAllUsers(users);
-
-      // Set current user
-      _currentUser = childUser;
-      await _saveCurrentUser();
-      notifyListeners();
-
-      return true;
-    } catch (e) {
-      _setError('Kode tidak valid atau tidak ditemukan');
-      return false;
-    } finally {
-      _setLoading(false);
-    }
-  }
-
-  // Get parent for current child
-  Future<AuthUser?> getParentForChild() async {
-    if (_currentUser?.role != UserRole.child ||
-        _currentUser?.parentId == null) {
-      return null;
-    }
-
-    try {
-      final users = await _getAllUsers();
-      return users.firstWhere(
-        (user) => user.id == _currentUser!.parentId,
-        orElse: () => throw Exception('Parent not found'),
-      );
-    } catch (e) {
-      return null;
-    }
-  }
-
-  // Get children for current parent
-  Future<List<AuthUser>> getChildrenForParent() async {
-    if (_currentUser?.role != UserRole.parent) {
-      return [];
-    }
-
-    try {
-      final users = await _getAllUsers();
-      return users
-          .where(
-            (user) =>
-                user.role == UserRole.child &&
-                user.parentId == _currentUser!.id,
-          )
-          .toList();
-    } catch (e) {
-      return [];
-    }
-  }
-
-  // Logout
-  Future<void> logout() async {
-    _currentUser = null;
-    await _saveCurrentUser();
     notifyListeners();
   }
 
-  // Helper methods
+  AgeTier? _getAgeTierFromAge(int age) {
+    if (age >= 6 && age <= 9) {
+      return AgeTier.tingkat1;
+    } else if (age >= 10 && age <= 12) {
+      return AgeTier.tingkat2;
+    } else if (age > 12) {
+      return AgeTier.tingkat3;
+    }
+    return null;
+  }
+
+  // PERBAIKAN: Mengembalikan User? dan menambahkan `age` sebagai parameter.
+  Future<User?> registerParent({
+    required String email,
+    required String password,
+    required String name,
+    required int age,
+  }) async {
+    _setLoading(true);
+    _clearError();
+    try {
+      final userCredential = await _auth.createUserWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+      await userCredential.user?.updateDisplayName(name);
+      final String parentId = userCredential.user!.uid;
+      final String childCode = _generateChildCode();
+
+      final newUser = User(
+        id: parentId,
+        name: name,
+        type: UserType.parent,
+        age: age,
+        ageTier: null,
+        childCode: childCode,
+        parentId: null,
+        createdAt: DateTime.now(),
+        lastLoginAt: DateTime.now(),
+      );
+      await _firestore
+          .collection('users')
+          .doc(parentId)
+          .set(newUser.toFirestore());
+
+      _currentUser = newUser;
+      notifyListeners();
+      return newUser;
+    } on firebase_auth.FirebaseAuthException catch (e) {
+      _setError(e.message ?? 'Gagal mendaftar.');
+      return null;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  // PERBAIKAN: Mengembalikan User? agar bisa langsung digunakan setelah login.
+  Future<User?> loginParent({
+    required String email,
+    required String password,
+  }) async {
+    _setLoading(true);
+    _clearError();
+    try {
+      final userCredential = await _auth.signInWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+      await _fetchUserData(userCredential.user!.uid);
+      return _currentUser;
+    } on firebase_auth.FirebaseAuthException catch (e) {
+      _setError(e.message ?? 'Gagal login.');
+      return null;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  // PERBAIKAN: Mengembalikan User? untuk konsistensi.
+  Future<User?> loginChild({
+    required String childCode,
+    required String childName,
+    required int age,
+  }) async {
+    _setLoading(true);
+    _clearError();
+    try {
+      final querySnapshot = await _firestore
+          .collection('users')
+          .where('role', isEqualTo: 'UserType.parent')
+          .where('childCode', isEqualTo: childCode.toUpperCase())
+          .limit(1)
+          .get();
+
+      if (querySnapshot.docs.isEmpty) {
+        _setError('Kode anak tidak valid atau tidak ditemukan.');
+        return null;
+      }
+
+      final parentDoc = querySnapshot.docs.first;
+      final parentId = parentDoc.id;
+
+      // Cek apakah anak dengan nama & parentId yang sama sudah ada
+      final existingChildQuery = await _firestore
+          .collection('users')
+          .where('parentId', isEqualTo: parentId)
+          .where('name', isEqualTo: childName)
+          .limit(1)
+          .get();
+
+      User targetUser;
+      if (existingChildQuery.docs.isNotEmpty) {
+        // Anak sudah ada, cukup login dan fetch datanya.
+        // NOTE: Ini akan membuat sesi anonim baru. Untuk login di perangkat
+        // yang sama, Firebase secara otomatis akan menggunakan UID anonim yang sama.
+        // Untuk perangkat berbeda, akan dibuat UID baru yang tidak cocok dengan doc ID.
+        // Ini adalah batasan dari pendekatan sederhana ini.
+        final existingChildDoc = existingChildQuery.docs.first;
+        targetUser = User.fromFirestore(existingChildDoc.data()!);
+        await _auth.signInAnonymously();
+        _currentUser = targetUser;
+      } else {
+        // Anak belum ada, buat user baru
+        final childCredential = await _auth.signInAnonymously();
+        final childUid = childCredential.user!.uid;
+        final ageTier = _getAgeTierFromAge(age);
+        targetUser = User(
+          id: childUid,
+          name: childName,
+          type: UserType.child,
+          parentId: parentId,
+          age: age,
+          ageTier: ageTier,
+          createdAt: DateTime.now(),
+          lastLoginAt: DateTime.now(),
+        );
+        await _firestore
+            .collection('users')
+            .doc(childUid)
+            .set(targetUser.toFirestore());
+        _currentUser = targetUser;
+      }
+      notifyListeners();
+      return _currentUser;
+    } catch (e) {
+      _setError('Terjadi kesalahan saat login anak: $e');
+      return null;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  Future<void> logout() async {
+    await _auth.signOut();
+    _currentUser = null;
+    notifyListeners();
+  }
+
+  String _generateChildCode() {
+    const chars =
+        'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Menghindari karakter ambigu
+    final random = Random.secure();
+    return String.fromCharCodes(Iterable.generate(
+        6, (_) => chars.codeUnitAt(random.nextInt(chars.length))));
+  }
+
   void _setLoading(bool loading) {
     _isLoading = loading;
     notifyListeners();
@@ -343,6 +216,5 @@ class AuthProvider extends ChangeNotifier {
 
   void _clearError() {
     _error = null;
-    notifyListeners();
   }
 }

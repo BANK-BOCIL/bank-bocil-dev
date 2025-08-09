@@ -1,12 +1,14 @@
+// lib/src/screens/main_navigation_screen.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/user.dart';
 import '../providers/app_provider.dart';
 import '../core/constants.dart';
-import 'child/tingkat1_home_screen.dart';
-import 'child/tingkat1_savings_screen.dart';
-import 'child/tingkat1_missions_screen.dart';
-import 'child/tingkat1_profile_screen.dart';
+// import 'child/tingkat1_home_screen.dart';
+// import 'child/tingkat1_savings_screen.dart';
+// import 'child/tingkat1_missions_screen.dart';
+// import 'child/tingkat1_profile_screen.dart';
+import 'parent/parent_main_screen.dart';
 
 class MainNavigationScreen extends StatefulWidget {
   final User user;
@@ -27,7 +29,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   Widget build(BuildContext context) {
     return Consumer<AppProvider>(
       builder: (context, appProvider, child) {
-        final pages = _getPages();
+        final pages = _getPages(appProvider.currentTheme);
         final bottomNavItems = _getBottomNavItems();
 
         return Scaffold(
@@ -62,50 +64,65 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     );
   }
 
-  List<Widget> _getPages() {
-    if (widget.user.isParent) {
+  List<Widget> _getPages(ThemeColor theme) {
+    if (widget.user.type == UserType.parent) {
       return [
-        _buildPlaceholderPage('Dashboard Orang Tua'),
-        _buildPlaceholderPage('Anak-anak'),
-        _buildPlaceholderPage('Transaksi'),
-        _buildPlaceholderPage('Laporan'),
-        _buildPlaceholderPage('Profil'),
+        ParentMainScreen(user: widget.user),
+        // Halaman placeholder orang tua
+        _buildPlaceholderPage('Anak-anak', AppColors.parentPrimary),
+        _buildPlaceholderPage('Transaksi', AppColors.parentPrimary),
+        _buildPlaceholderPage('Laporan', AppColors.parentPrimary),
+        _buildPlaceholderPage('Profil', AppColors.parentPrimary),
       ];
     } else {
-      // Child pages based on age tier
-      switch (widget.user.ageTier!) {
+      switch (widget.user.ageTier) {
         case AgeTier.tingkat1:
           return [
-            Tingkat1HomeScreen(
-              user: widget.user,
-              onTabChange: (index) => setState(() => _currentIndex = index),
-            ),
-            Tingkat1SavingsScreen(user: widget.user),
-            Tingkat1MissionsScreen(user: widget.user),
-            Tingkat1ProfileScreen(user: widget.user),
+            // Tingkat1HomeScreen(
+            //   user: widget.user,
+            //   onTabChange: (index) => setState(() => _currentIndex = index),
+            // ),
+            // Tingkat1SavingsScreen(user: widget.user),
+            // Tingkat1MissionsScreen(user: widget.user),
+            // Tingkat1ProfileScreen(user: widget.user),
+            _buildPlaceholderPage(
+                'Beranda Tingkat 1', AppColors.tingkat1Primary),
           ];
         case AgeTier.tingkat2:
           return [
-            _buildPlaceholderPage('Beranda'),
-            _buildPlaceholderPage('Celengan'),
-            _buildPlaceholderPage('Misi'),
-            _buildPlaceholderPage('Transaksi'),
-            _buildPlaceholderPage('Profil'),
+            _buildPlaceholderPage(
+                'Beranda Tingkat 2', AppColors.tingkat2Primary),
+            _buildPlaceholderPage(
+                'Celengan Tingkat 2', AppColors.tingkat2Primary),
+            _buildPlaceholderPage('Misi Tingkat 2', AppColors.tingkat2Primary),
+            _buildPlaceholderPage(
+                'Transaksi Tingkat 2', AppColors.tingkat2Primary),
+            _buildPlaceholderPage(
+                'Profil Tingkat 2', AppColors.tingkat2Primary),
           ];
         case AgeTier.tingkat3:
           return [
-            _buildPlaceholderPage('Beranda'),
-            _buildPlaceholderPage('Budget'),
-            _buildPlaceholderPage('Investasi'),
-            _buildPlaceholderPage('Transaksi'),
-            _buildPlaceholderPage('Profil'),
+            _buildPlaceholderPage(
+                'Beranda Tingkat 3', AppColors.tingkat3Primary),
+            _buildPlaceholderPage(
+                'Budget Tingkat 3', AppColors.tingkat3Primary),
+            _buildPlaceholderPage(
+                'Investasi Tingkat 3', AppColors.tingkat3Primary),
+            _buildPlaceholderPage(
+                'Transaksi Tingkat 3', AppColors.tingkat3Primary),
+            _buildPlaceholderPage(
+                'Profil Tingkat 3', AppColors.tingkat3Primary),
+          ];
+        default:
+          return [
+            _buildPlaceholderPage('Error', AppColors.error),
           ];
       }
     }
   }
 
   List<BottomNavigationBarItem> _getBottomNavItems() {
-    if (widget.user.isParent) {
+    if (widget.user.type == UserType.parent) {
       return [
         const BottomNavigationBarItem(
           icon: Icon(Icons.dashboard_outlined),
@@ -134,7 +151,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         ),
       ];
     } else {
-      switch (widget.user.ageTier!) {
+      switch (widget.user.ageTier) {
         case AgeTier.tingkat1:
           return [
             const BottomNavigationBarItem(
@@ -159,6 +176,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
             ),
           ];
         case AgeTier.tingkat2:
+        case AgeTier.tingkat3:
           return [
             const BottomNavigationBarItem(
               icon: Icon(Icons.home_outlined),
@@ -186,32 +204,12 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
               label: 'Profil',
             ),
           ];
-        case AgeTier.tingkat3:
+        default:
           return [
             const BottomNavigationBarItem(
-              icon: Icon(Icons.home_outlined),
-              activeIcon: Icon(Icons.home),
-              label: 'Beranda',
-            ),
-            const BottomNavigationBarItem(
-              icon: Icon(Icons.account_balance_wallet_outlined),
-              activeIcon: Icon(Icons.account_balance_wallet),
-              label: 'Budget',
-            ),
-            const BottomNavigationBarItem(
-              icon: Icon(Icons.trending_up_outlined),
-              activeIcon: Icon(Icons.trending_up),
-              label: 'Investasi',
-            ),
-            const BottomNavigationBarItem(
-              icon: Icon(Icons.receipt_long_outlined),
-              activeIcon: Icon(Icons.receipt_long),
-              label: 'Transaksi',
-            ),
-            const BottomNavigationBarItem(
-              icon: Icon(Icons.person_outline),
-              activeIcon: Icon(Icons.person),
-              label: 'Profil',
+              icon: Icon(Icons.error_outline),
+              activeIcon: Icon(Icons.error),
+              label: 'Unknown',
             ),
           ];
       }
@@ -219,82 +217,75 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   }
 
   Color _getPrimaryColor(ThemeColor theme) {
-    if (widget.user.isParent) {
+    if (widget.user.type == UserType.parent) {
       return AppColors.parentPrimary;
     } else {
-      switch (widget.user.ageTier!) {
+      switch (widget.user.ageTier) {
         case AgeTier.tingkat1:
           return AppColors.getCurrentPrimary(theme);
         case AgeTier.tingkat2:
           return AppColors.tingkat2Primary;
         case AgeTier.tingkat3:
           return AppColors.tingkat3Primary;
+        default:
+          return AppColors.grey400;
       }
     }
   }
 
-  Widget _buildPlaceholderPage(String title) {
-    return Consumer<AppProvider>(
-      builder: (context, appProvider, child) {
-        return Scaffold(
-          backgroundColor: AppColors.background,
-          body: SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.all(24.0),
-              child: Column(
-                children: [
-                  // Custom Header
-                  Row(
+  Widget _buildPlaceholderPage(String title, Color color) {
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(AppConstants.spacing24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  color: color,
+                ),
+              ),
+              const SizedBox(height: 40),
+              Expanded(
+                child: Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
+                      Icon(
+                        Icons.construction,
+                        size: 64,
+                        color: AppColors.grey400,
+                      ),
+                      const SizedBox(height: 16),
                       Text(
-                        title,
-                        style: TextStyle(
+                        '$title Screen',
+                        style: const TextStyle(
                           fontSize: 24,
                           fontWeight: FontWeight.bold,
-                          color: _getPrimaryColor(appProvider.currentTheme),
+                          color: AppColors.grey600,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Coming soon...',
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: AppColors.grey500,
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 40),
-                  // Placeholder Content
-                  Expanded(
-                    child: Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.construction,
-                            size: 64,
-                            color: AppColors.grey400,
-                          ),
-                          const SizedBox(height: 16),
-                          Text(
-                            '$title Screen',
-                            style: const TextStyle(
-                              fontSize: 24,
-                              fontWeight: FontWeight.bold,
-                              color: AppColors.grey600,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Coming soon...',
-                            style: TextStyle(
-                              fontSize: 16,
-                              color: AppColors.grey500,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
+                ),
               ),
-            ),
+            ],
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 }

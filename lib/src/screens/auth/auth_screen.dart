@@ -1,3 +1,4 @@
+// lib/src/screens/auth/auth_screen.dart
 import 'package:flutter/material.dart';
 import '../../core/constants.dart';
 import '../../core/helpers.dart';
@@ -43,7 +44,7 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
   Widget build(BuildContext context) {
     return Scaffold(
       body: Container(
-        decoration: BoxDecoration(
+        decoration: const BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
@@ -60,19 +61,16 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
               child: ConstrainedBox(
                 constraints: BoxConstraints(
                   minHeight: MediaQuery.of(context).size.height -
-                      MediaQuery.of(context).padding.top -
-                      MediaQuery.of(context).padding.bottom,
+                      MediaQuery.of(context).padding.top,
                 ),
                 child: Padding(
                   padding: const EdgeInsets.all(AppConstants.spacing24),
                   child: Column(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    mainAxisAlignment: MainAxisAlignment.spaceAround,
                     children: [
                       Column(
                         children: [
                           Helpers.verticalSpace(AppConstants.spacing32),
-
-                          // Logo and Title
                           Container(
                             width: 100,
                             height: 100,
@@ -94,9 +92,7 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
                               ),
                             ),
                           ),
-
                           Helpers.verticalSpace(AppConstants.spacing24),
-
                           const Text(
                             'BankBocil',
                             style: TextStyle(
@@ -105,9 +101,7 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
                               color: AppColors.white,
                             ),
                           ),
-
                           Helpers.verticalSpace(AppConstants.spacing8),
-
                           const Text(
                             'Belajar Mengelola Uang Sejak Dini',
                             style: TextStyle(
@@ -116,10 +110,10 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
                             ),
                             textAlign: TextAlign.center,
                           ),
-
-                          Helpers.verticalSpace(AppConstants.spacing48),
-
-                          // Role Selection Title
+                        ],
+                      ),
+                      Column(
+                        children: [
                           const Text(
                             'Pilih Peran Anda',
                             style: TextStyle(
@@ -128,10 +122,7 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
                               color: AppColors.white,
                             ),
                           ),
-
                           Helpers.verticalSpace(AppConstants.spacing24),
-
-                          // Parent Card
                           _buildRoleCard(
                             icon: '👨‍👩‍👧‍👦',
                             title: 'Orang Tua',
@@ -143,10 +134,7 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
                               ),
                             ),
                           ),
-
                           Helpers.verticalSpace(AppConstants.spacing16),
-
-                          // Child Card
                           _buildRoleCard(
                             icon: '🧒',
                             title: 'Anak',
@@ -161,20 +149,10 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
                           ),
                         ],
                       ),
-
-                      // Footer
-                      Column(
-                        children: [
-                          Helpers.verticalSpace(AppConstants.spacing24),
-                          const Text(
-                            'Aplikasi Edukasi Keuangan untuk Keluarga',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: AppColors.white,
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                        ],
+                      const Text(
+                        'Aplikasi Edukasi Keuangan untuk Keluarga',
+                        style: TextStyle(fontSize: 12, color: AppColors.white),
+                        textAlign: TextAlign.center,
                       ),
                     ],
                   ),
@@ -211,10 +189,7 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
         ),
         child: Column(
           children: [
-            Text(
-              icon,
-              style: const TextStyle(fontSize: 40),
-            ),
+            Text(icon, style: const TextStyle(fontSize: 40)),
             Helpers.verticalSpace(AppConstants.spacing12),
             Text(
               title,
@@ -227,10 +202,7 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
             Helpers.verticalSpace(AppConstants.spacing8),
             Text(
               subtitle,
-              style: TextStyle(
-                fontSize: 14,
-                color: AppColors.grey600,
-              ),
+              style: TextStyle(fontSize: 14, color: AppColors.grey600),
               textAlign: TextAlign.center,
             ),
           ],

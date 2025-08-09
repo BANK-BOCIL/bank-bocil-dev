@@ -1,142 +1,127 @@
+// lib/src/screens/parent/parent_main_screen.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../providers/auth_provider.dart';
+import '../../models/user.dart';
+import '../../providers/app_provider.dart';
 import '../../core/constants.dart';
 import '../../core/helpers.dart';
-import '../child/auth_screen.dart';
 
 class ParentMainScreen extends StatelessWidget {
-  const ParentMainScreen({super.key});
+  final User user;
+
+  const ParentMainScreen({
+    super.key,
+    required this.user,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<AuthProvider>(
-      builder: (context, authProvider, child) {
-        final user = authProvider.currentUser;
-
+    return Consumer<AppProvider>(
+      builder: (context, appProvider, child) {
         return Scaffold(
-          appBar: AppBar(
-            title: const Text('Dashboard Orang Tua'),
-            backgroundColor: AppColors.primary,
-            foregroundColor: AppColors.white,
-            actions: [
-              IconButton(
-                onPressed: () async {
-                  await authProvider.logout();
-                  if (context.mounted) {
-                    Navigator.of(context).pushReplacement(
-                      MaterialPageRoute(
-                        builder: (context) => const AuthScreen(),
-                      ),
-                    );
-                  }
-                },
-                icon: const Icon(Icons.exit_to_app),
-              ),
-            ],
-          ),
-          body: Padding(
-            padding: const EdgeInsets.all(AppConstants.spacing20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Selamat datang, ${user?.name ?? 'Orang Tua'}!',
-                  style: const TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.grey800,
-                  ),
-                ),
-                Helpers.verticalSpace(AppConstants.spacing16),
-
-                // Child Code Card
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(AppConstants.spacing20),
-                  decoration: BoxDecoration(
-                    color: AppColors.primary.withOpacity(0.1),
-                    borderRadius:
-                        BorderRadius.circular(AppConstants.radiusLarge),
-                    border: Border.all(
-                      color: AppColors.primary.withOpacity(0.3),
+          backgroundColor: AppColors.background,
+          body: SafeArea(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(AppConstants.spacing24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Header
+                  Text(
+                    'Dashboard Keluarga',
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.parentPrimary,
                     ),
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        '🔑 Kode untuk Anak',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.grey800,
-                        ),
-                      ),
-                      Helpers.verticalSpace(AppConstants.spacing8),
-                      Text(
-                        'Berikan kode ini kepada anak untuk masuk ke aplikasi:',
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: AppColors.grey600,
-                        ),
-                      ),
-                      Helpers.verticalSpace(AppConstants.spacing16),
-                      Container(
-                        padding: const EdgeInsets.all(AppConstants.spacing16),
-                        decoration: BoxDecoration(
-                          color: AppColors.white,
-                          borderRadius:
-                              BorderRadius.circular(AppConstants.radiusMedium),
-                          border: Border.all(color: AppColors.primary),
-                        ),
-                        child: Center(
-                          child: Text(
-                            user?.childCode ?? 'Loading...',
-                            style: const TextStyle(
-                              fontSize: 32,
-                              fontWeight: FontWeight.bold,
-                              color: AppColors.primary,
-                              letterSpacing: 4,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
+                  Helpers.verticalSpace(AppConstants.spacing8),
+                  Text(
+                    'Selamat datang, ${user.name}!',
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: AppColors.grey600,
+                    ),
                   ),
-                ),
+                  Helpers.verticalSpace(AppConstants.spacing24),
 
-                Helpers.verticalSpace(AppConstants.spacing24),
+                  // Contoh Placeholder untuk Total Saldo
+                  _buildStatCard(
+                    title: 'Total Saldo Keluarga',
+                    value: 'Rp 70,000',
+                    color: AppColors.success,
+                    icon: Icons.account_balance_wallet,
+                  ),
 
-                // Info
-                Container(
-                  padding: const EdgeInsets.all(AppConstants.spacing16),
-                  decoration: BoxDecoration(
-                    color: AppColors.grey100,
-                    borderRadius:
-                        BorderRadius.circular(AppConstants.radiusMedium),
+                  Helpers.verticalSpace(AppConstants.spacing16),
+
+                  // Contoh Placeholder untuk Tugas Menunggu
+                  _buildStatCard(
+                    title: 'Tugas Menunggu',
+                    value: '1 Tugas',
+                    color: AppColors.warning,
+                    icon: Icons.assignment,
                   ),
-                  child: Row(
-                    children: [
-                      const Text('💡', style: TextStyle(fontSize: 24)),
-                      Helpers.horizontalSpace(AppConstants.spacing12),
-                      Expanded(
-                        child: Text(
-                          'Fitur lengkap untuk orang tua akan segera hadir. Saat ini Anda dapat memberikan kode di atas kepada anak untuk mulai belajar.',
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: AppColors.grey700,
-                          ),
-                        ),
-                      ),
-                    ],
+
+                  Helpers.verticalSpace(AppConstants.spacing16),
+
+                  // Contoh Placeholder untuk Anak Aktif
+                  _buildStatCard(
+                    title: 'Anak Aktif',
+                    value: '2 Anak',
+                    color: AppColors.tingkat1Primary,
+                    icon: Icons.child_care,
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         );
       },
+    );
+  }
+
+  Widget _buildStatCard({
+    required String title,
+    required String value,
+    required Color color,
+    required IconData icon,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(AppConstants.spacing16),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(AppConstants.radiusMedium),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: color),
+          Helpers.horizontalSpace(AppConstants.spacing16),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.grey800,
+                ),
+              ),
+              Helpers.verticalSpace(AppConstants.spacing4),
+              Text(
+                value,
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: color,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }

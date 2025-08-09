@@ -1,9 +1,11 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 enum TransactionType { income, expense, allowance, mission_reward, transfer }
 
 enum TransactionStatus { pending, approved, rejected, completed }
 
 class Transaction {
-  final String id;
+  final String? id;
   final String userId;
   final String? parentId;
   final TransactionType type;
@@ -17,7 +19,7 @@ class Transaction {
   final String? savingsGoalId;
 
   Transaction({
-    required this.id,
+    this.id,
     required this.userId,
     this.parentId,
     required this.type,
@@ -31,40 +33,38 @@ class Transaction {
     this.savingsGoalId,
   });
 
-  bool get isPending => status == TransactionStatus.pending;
-  bool get isApproved => status == TransactionStatus.approved;
-  bool get isCompleted => status == TransactionStatus.completed;
-  bool get needsApproval => type == TransactionType.expense && isPending;
+  Map<String, dynamic> toFirestore() {
+    return {
+      'userId': userId,
+      'parentId': parentId,
+      'type': type.name,
+      'amount': amount,
+      'description': description,
+      'category': category,
+      'status': status.name,
+      'createdAt': createdAt,
+      'approvedAt': approvedAt,
+      'missionId': missionId,
+      'savingsGoalId': savingsGoalId,
+    };
+  }
 
-  Map<String, dynamic> toJson() => {
-        'id': id,
-        'userId': userId,
-        'parentId': parentId,
-        'type': type.name,
-        'amount': amount,
-        'description': description,
-        'category': category,
-        'status': status.name,
-        'createdAt': createdAt.toIso8601String(),
-        'approvedAt': approvedAt?.toIso8601String(),
-        'missionId': missionId,
-        'savingsGoalId': savingsGoalId,
-      };
-
-  factory Transaction.fromJson(Map<String, dynamic> json) => Transaction(
-        id: json['id'],
-        userId: json['userId'],
-        parentId: json['parentId'],
-        type: TransactionType.values.byName(json['type']),
-        amount: json['amount'].toDouble(),
-        description: json['description'],
-        category: json['category'],
-        status: TransactionStatus.values.byName(json['status']),
-        createdAt: DateTime.parse(json['createdAt']),
-        approvedAt: json['approvedAt'] != null
-            ? DateTime.parse(json['approvedAt'])
-            : null,
-        missionId: json['missionId'],
-        savingsGoalId: json['savingsGoalId'],
-      );
+  factory Transaction.fromFirestore(
+      DocumentSnapshot<Map<String, dynamic>> doc) {
+    final data = doc.data()!;
+    return Transaction(
+      id: doc.id,
+      userId: data['userId'] as String,
+      parentId: data['parentId'] as String?,
+      type: TransactionType.values.byName(data['type']),
+      amount: (data['amount'] as num).toDouble(),
+      description: data['description'] as String,
+      category: data['category'] as String?,
+      status: TransactionStatus.values.byName(data['status']),
+      createdAt: (data['createdAt'] as Timestamp).toDate(),
+      approvedAt: (data['approvedAt'] as Timestamp?)?.toDate(),
+      missionId: data['missionId'] as String?,
+      savingsGoalId: data['savingsGoalId'] as String?,
+    );
+  }
 }

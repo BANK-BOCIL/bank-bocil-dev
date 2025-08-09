@@ -1,371 +1,215 @@
+// lib/src/providers/app_provider.dart
 import 'package:flutter/foundation.dart';
+import 'package:cloud_firestore/cloud_firestore.dart' as firestore;
 import '../models/user.dart';
-import '../models/transaction.dart';
+import '../models/transaction.dart' as local_transaction;
 import '../models/savings_goal.dart';
 import '../models/mission.dart';
 import '../models/budget.dart';
 import '../core/constants.dart';
 
 class AppProvider extends ChangeNotifier {
-  // Initialization flag
-  bool _isDataInitialized = false;
-  bool get isDataInitialized => _isDataInitialized;
+  final firestore.FirebaseFirestore _firestore =
+      firestore.FirebaseFirestore.instance;
 
-  // Current User
+  // --- STATE VARIABLES ---
   User? _currentUser;
-  User? get currentUser {
-    if (!_isDataInitialized) {
-      _initializeSampleDataSilently();
-    }
-    return _currentUser;
-  }
-
-  // Children (for parent users)
-  List<User> _children = [];
-  List<User> get children => _children;
-
-  // Transactions
-  List<Transaction> _transactions = [];
-  List<Transaction> get transactions => _transactions;
-
-  // Savings Goals
-  List<SavingsGoal> _savingsGoals = [];
-  List<SavingsGoal> get savingsGoals => _savingsGoals;
-
-  // Missions
-  List<Mission> _missions = [];
-  List<Mission> get missions => _missions;
-
-  // Budgets
-  List<Budget> _budgets = [];
-  List<Budget> get budgets => _budgets;
-
-  // Loading states
   bool _isLoading = false;
-  bool get isLoading => _isLoading;
-
-  // Error state
   String? _error;
-  String? get error => _error;
-
-  // Notification settings
-  bool? _isNotificationEnabled = true;
-  bool? get isNotificationEnabled => _isNotificationEnabled;
-
-  // Theme settings
+  bool _isNotificationEnabled = true;
   ThemeColor _currentTheme = ThemeColor.pink;
+
+  // BARU: State untuk mengelola anak yang sedang dilihat oleh orang tua
+  User? _selectedChild;
+
+  // Deklarasi list data
+  List<User> _children = [];
+  List<local_transaction.Transaction> _transactions = [];
+  List<SavingsGoal> _savingsGoals = [];
+  List<Mission> _missions = [];
+  List<Budget> _budgets = [];
+
+  // --- GETTERS ---
+  User? get currentUser => _currentUser;
+  User? get selectedChild => _selectedChild; // Getter untuk anak yang dipilih
+  bool get isLoading => _isLoading;
+  String? get error => _error;
+  bool get isNotificationEnabled => _isNotificationEnabled;
   ThemeColor get currentTheme => _currentTheme;
 
-  // Set current user
-  void setCurrentUser(User user) {
+  // Getter data, sekarang lebih dinamis
+  List<User> get children => _children;
+  List<local_transaction.Transaction> get transactions => _transactions;
+  List<SavingsGoal> get savingsGoals => _savingsGoals;
+  List<Mission> get missions => _missions;
+  List<Budget> get budgets => _budgets;
+
+  // --- PUBLIC METHODS ---
+
+  // PERBAIKAN: fetchInitialData dipanggil setelah login berhasil.
+  // Logikanya sekarang bercabang tergantung tipe user.
+  Future<void> fetchInitialData(User user) async {
+    _setLoading(true);
+    _clearError();
+    _clearAllData(); // Bersihkan data lama sebelum fetch
     _currentUser = user;
-    notifyListeners();
-  }
 
-  // User methods
-  void addChild(User child) {
-    _children.add(child);
-    notifyListeners();
-  }
-
-  void updateChild(User updatedChild) {
-    final index = _children.indexWhere((child) => child.id == updatedChild.id);
-    if (index != -1) {
-      _children[index] = updatedChild;
-      notifyListeners();
-    }
-  }
-
-  void removeChild(String childId) {
-    _children.removeWhere((child) => child.id == childId);
-    notifyListeners();
-  }
-
-  // Transaction methods
-  void addTransaction(Transaction transaction) {
-    _transactions.add(transaction);
-    _transactions.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-    notifyListeners();
-  }
-
-  void updateTransaction(Transaction updatedTransaction) {
-    final index =
-        _transactions.indexWhere((t) => t.id == updatedTransaction.id);
-    if (index != -1) {
-      _transactions[index] = updatedTransaction;
-      notifyListeners();
-    }
-  }
-
-  void removeTransaction(String transactionId) {
-    _transactions.removeWhere((t) => t.id == transactionId);
-    notifyListeners();
-  }
-
-  List<Transaction> getTransactionsForUser(String userId) {
-    return _transactions.where((t) => t.userId == userId).toList();
-  }
-
-  List<Transaction> getPendingTransactions() {
-    return _transactions
-        .where((t) => t.status == TransactionStatus.pending)
-        .toList();
-  }
-
-  double getBalance(String userId) {
-    final userTransactions = getTransactionsForUser(userId);
-    double balance = 0;
-
-    for (final transaction in userTransactions) {
-      if (transaction.status == TransactionStatus.completed) {
-        switch (transaction.type) {
-          case TransactionType.income:
-          case TransactionType.allowance:
-          case TransactionType.mission_reward:
-            balance += transaction.amount;
-            break;
-          case TransactionType.expense:
-            balance -= transaction.amount;
-            break;
-          case TransactionType.transfer:
-            // Handle transfers based on context
-            break;
-        }
+    try {
+      if (_currentUser!.type == UserType.parent) {
+        // Jika orang tua, hanya fetch daftar anaknya.
+        // Data spesifik (misi, dll) akan di-fetch saat anak dipilih.
+        await _fetchChildren(_currentUser!.id);
+      } else {
+        // Jika anak, langsung fetch semua data miliknya.
+        await _fetchDataForUser(_currentUser!.id);
       }
-    }
-
-    return balance;
-  }
-
-  // Savings Goal methods
-  void addSavingsGoal(SavingsGoal goal) {
-    _savingsGoals.add(goal);
-    notifyListeners();
-  }
-
-  void updateSavingsGoal(SavingsGoal updatedGoal) {
-    final index = _savingsGoals.indexWhere((g) => g.id == updatedGoal.id);
-    if (index != -1) {
-      _savingsGoals[index] = updatedGoal;
-      notifyListeners();
+    } catch (e) {
+      _setError('Gagal memuat data awal: $e');
+    } finally {
+      _setLoading(false);
     }
   }
 
-  void removeSavingsGoal(String goalId) {
-    _savingsGoals.removeWhere((g) => g.id == goalId);
+  // BARU: Metode untuk memilih anak dan memuat datanya (dipanggil dari UI).
+  Future<void> selectChild(User child) async {
+    if (_currentUser?.type != UserType.parent) return;
+
+    _selectedChild = child;
+    notifyListeners(); // Update UI untuk menunjukkan anak yang dipilih
+    await _fetchDataForUser(child.id);
+  }
+
+  // BARU: Metode untuk membersihkan data anak yang dipilih.
+  void clearSelectedChild() {
+    _selectedChild = null;
+    _clearAllData(clearChildren: false); // Jangan hapus daftar anak
     notifyListeners();
   }
 
-  List<SavingsGoal> getSavingsGoalsForUser(String userId) {
-    return _savingsGoals.where((g) => g.userId == userId).toList();
-  }
+  // --- METHODS UNTUK INTERAKSI DENGAN FIRESTORE ---
 
-  void addToSavingsGoal(String goalId, double amount) {
-    final goalIndex = _savingsGoals.indexWhere((g) => g.id == goalId);
-    if (goalIndex != -1) {
-      final goal = _savingsGoals[goalIndex];
-      final newAmount = goal.currentAmount + amount;
-      final updatedGoal = goal.copyWith(
-        currentAmount: newAmount,
-        status:
-            newAmount >= goal.targetAmount ? GoalStatus.completed : goal.status,
-        completedAt:
-            newAmount >= goal.targetAmount ? DateTime.now() : goal.completedAt,
-      );
-      _savingsGoals[goalIndex] = updatedGoal;
-      notifyListeners();
+  // PERBAIKAN: Logika CRUD sekarang lebih efisien.
+  // Hanya me-refresh data yang relevan, bukan semuanya.
+  // Asumsi: Objek 'mission' memiliki properti 'userId'.
+  Future<void> addMission(Mission mission) async {
+    _setLoading(true);
+    _clearError();
+    try {
+      await _firestore.collection('missions').add(mission.toFirestore());
+      // Refresh hanya data misi untuk user yang bersangkutan.
+      await _fetchMissions(mission.userId);
+    } catch (e) {
+      _setError('Gagal menambahkan misi: $e');
+    } finally {
+      _setLoading(false);
     }
   }
 
-  // Mission methods
-  void addMission(Mission mission) {
-    _missions.add(mission);
-    notifyListeners();
-  }
-
-  void updateMission(Mission updatedMission) {
-    final index = _missions.indexWhere((m) => m.id == updatedMission.id);
-    if (index != -1) {
-      _missions[index] = updatedMission;
-      notifyListeners();
+  Future<void> updateMission(Mission updatedMission) async {
+    _setLoading(true);
+    _clearError();
+    try {
+      if (updatedMission.id != null) {
+        await _firestore
+            .collection('missions')
+            .doc(updatedMission.id)
+            .update(updatedMission.toFirestore());
+        // Refresh hanya data misi untuk user yang bersangkutan.
+        await _fetchMissions(updatedMission.userId);
+      }
+    } catch (e) {
+      _setError('Gagal memperbarui misi: $e');
+    } finally {
+      _setLoading(false);
     }
   }
 
-  void removeMission(String missionId) {
-    _missions.removeWhere((m) => m.id == missionId);
-    notifyListeners();
+  // Metode lain (addTransaction, updateTransaction, dsb.) harus mengikuti pola yang sama.
+
+  // --- PRIVATE FETCH METHODS ---
+
+  // BARU: Metode terpusat untuk fetch semua data milik satu user (parent/child).
+  Future<void> _fetchDataForUser(String userId) async {
+    _setLoading(true);
+    try {
+      await _fetchMissions(userId);
+      await _fetchTransactions(userId);
+      await _fetchSavingsGoals(userId);
+      // Tambahkan fetch data lain di sini jika ada.
+    } catch (e) {
+      _setError('Gagal memuat data untuk user $userId: $e');
+      rethrow; // Lempar kembali agar bisa ditangkap oleh pemanggil
+    } finally {
+      _setLoading(false);
+    }
   }
 
-  List<Mission> getMissionsForUser(String userId) {
-    return _missions.where((m) => m.userId == userId).toList();
-  }
-
-  List<Mission> getActiveMissionsForUser(String userId) {
-    return _missions
-        .where((m) => m.userId == userId && m.status == MissionStatus.active)
+  Future<void> _fetchChildren(String parentId) async {
+    final childrenSnapshot = await _firestore
+        .collection('users')
+        .where('parentId', isEqualTo: parentId)
+        .get();
+    _children = childrenSnapshot.docs
+        .map((doc) => User.fromFirestore(doc.data()))
         .toList();
-  }
-
-  void completeMission(String missionId) {
-    final missionIndex = _missions.indexWhere((m) => m.id == missionId);
-    if (missionIndex != -1) {
-      final mission = _missions[missionIndex];
-      final completedMission = mission.copyWith(
-        status: MissionStatus.completed,
-        completedAt: DateTime.now(),
-      );
-      _missions[missionIndex] = completedMission;
-
-      // Add reward transaction
-      final rewardTransaction = Transaction(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
-        userId: mission.userId,
-        parentId: mission.parentId,
-        type: TransactionType.mission_reward,
-        amount: mission.reward,
-        description: 'Reward: ${mission.title}',
-        status: TransactionStatus.completed,
-        createdAt: DateTime.now(),
-        missionId: missionId,
-      );
-
-      addTransaction(rewardTransaction);
-      notifyListeners();
-    }
-  }
-
-  // Budget methods
-  void addBudget(Budget budget) {
-    _budgets.add(budget);
     notifyListeners();
   }
 
-  void updateBudget(Budget updatedBudget) {
-    final index = _budgets.indexWhere((b) => b.id == updatedBudget.id);
-    if (index != -1) {
-      _budgets[index] = updatedBudget;
-      notifyListeners();
-    }
-  }
-
-  void removeBudget(String budgetId) {
-    _budgets.removeWhere((b) => b.id == budgetId);
+  Future<void> _fetchMissions(String userId) async {
+    final missionsSnapshot = await _firestore
+        .collection('missions')
+        .where('userId', isEqualTo: userId)
+        .get();
+    _missions =
+        missionsSnapshot.docs.map((doc) => Mission.fromFirestore(doc)).toList();
     notifyListeners();
   }
 
-  List<Budget> getBudgetsForUser(String userId) {
-    return _budgets.where((b) => b.userId == userId && b.isActive).toList();
+  Future<void> _fetchTransactions(String userId) async {
+    final transactionsSnapshot = await _firestore
+        .collection('transactions')
+        .where('userId', isEqualTo: userId)
+        .get();
+    _transactions = transactionsSnapshot.docs
+        .map((doc) => local_transaction.Transaction.fromFirestore(doc))
+        .toList();
+    notifyListeners();
   }
 
-  // Utility methods
-  void setLoading(bool loading) {
+  Future<void> _fetchSavingsGoals(String userId) async {
+    final goalsSnapshot = await _firestore
+        .collection('savings_goals')
+        .where('userId', isEqualTo: userId)
+        .get();
+    _savingsGoals = goalsSnapshot.docs
+        .map((doc) => SavingsGoal.fromFirestore(doc))
+        .toList();
+    notifyListeners();
+  }
+
+  // --- UTILITY METHODS ---
+
+  void _clearAllData({bool clearChildren = true}) {
+    if (clearChildren) _children = [];
+    _transactions = [];
+    _savingsGoals = [];
+    _missions = [];
+    _budgets = [];
+    _selectedChild = null;
+  }
+
+  void _setLoading(bool loading) {
     _isLoading = loading;
     notifyListeners();
   }
 
-  void setError(String? error) {
+  void _setError(String? error) {
     _error = error;
     notifyListeners();
   }
 
-  void clearError() {
+  void _clearError() {
     _error = null;
     notifyListeners();
-  }
-
-  // Notification methods
-  void toggleNotification(bool enabled) {
-    _isNotificationEnabled = enabled;
-    notifyListeners();
-
-    // Here you could add logic to actually enable/disable push notifications
-    // For example, using firebase_messaging or local_notifications packages
-  }
-
-  // Theme methods
-  void changeTheme(ThemeColor newTheme) {
-    _currentTheme = newTheme;
-    notifyListeners();
-  }
-
-  // Initialize with sample data for demo
-  void initializeSampleData() {
-    _initializeSampleDataSilently();
-    notifyListeners();
-  }
-
-  // Initialize data without triggering notifications (for lazy loading)
-  void _initializeSampleDataSilently() {
-    if (_isDataInitialized) return;
-
-    // Sample child user
-    final child = User(
-      id: '1',
-      name: 'Budi',
-      type: UserType.child,
-      ageTier: AgeTier.tingkat1,
-      age: 8,
-      parentId: 'parent1',
-      createdAt: DateTime.now(),
-    );
-
-    _currentUser = child;
-
-    // Sample savings goal
-    final goal = SavingsGoal(
-      id: '1',
-      userId: '1',
-      name: 'Robot Toy',
-      description: 'Robot mainan yang keren!',
-      targetAmount: 150000,
-      currentAmount: 50000,
-      iconName: 'toy',
-      createdAt: DateTime.now(),
-      targetDate: DateTime.now().add(const Duration(days: 30)),
-    );
-
-    _savingsGoals.add(goal);
-
-    // Sample mission
-    final mission = Mission(
-      id: '1',
-      userId: '1',
-      parentId: 'parent1',
-      title: 'Bersihkan Kamar',
-      description: 'Rapikan dan bersihkan kamar tidur',
-      reward: 10000,
-      type: MissionType.daily,
-      createdAt: DateTime.now(),
-      deadline: DateTime.now().add(const Duration(hours: 24)),
-      iconName: 'cleaning',
-    );
-
-    _missions.add(mission);
-
-    // Sample transactions
-    final transactions = [
-      Transaction(
-        id: '1',
-        userId: '1',
-        type: TransactionType.allowance,
-        amount: 20000,
-        description: 'Uang saku mingguan',
-        status: TransactionStatus.completed,
-        createdAt: DateTime.now().subtract(const Duration(days: 2)),
-      ),
-      Transaction(
-        id: '2',
-        userId: '1',
-        type: TransactionType.mission_reward,
-        amount: 10000,
-        description: 'Reward: Cuci piring',
-        status: TransactionStatus.completed,
-        createdAt: DateTime.now().subtract(const Duration(days: 1)),
-      ),
-    ];
-
-    _transactions.addAll(transactions);
-
-    _isDataInitialized = true;
   }
 }
