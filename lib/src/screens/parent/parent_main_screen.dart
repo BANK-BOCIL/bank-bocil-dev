@@ -1,12 +1,13 @@
 // lib/src/screens/parent/parent_main_screen.dart
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'; // <-- for Clipboard
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/app_provider.dart';
 import '../../core/constants.dart';
 import '../../core/helpers.dart';
 import '../auth_wrapper.dart';
-import '../assistant/ai_assistant_screen.dart'; // <-- NEW
+import '../assistant/ai_assistant_screen.dart';
 import 'tabs/anak_tab.dart';
 import 'tabs/tugas_tab.dart';
 import 'tabs/uang_saku_tab.dart';
@@ -24,6 +25,10 @@ class ParentMainScreen extends StatefulWidget {
 class _ParentMainScreenState extends State<ParentMainScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
+
+  // Static demo value. Later you can replace with:
+  // final code = context.read<AuthProvider>().currentUser?.childCode ?? '-';
+  static const String _kDemoFamilyCode = 'V5HPQ6';
 
   @override
   void initState() {
@@ -53,13 +58,23 @@ class _ParentMainScreenState extends State<ParentMainScreen>
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: _buildAppBar(context, authProvider, parentColor),
-      floatingActionButton: _AssistantFab(onTap: _openAssistant), // <-- NEW
+      floatingActionButton: _AssistantFab(onTap: _openAssistant),
       body: appProvider.isLoading
           ? const Center(child: CircularProgressIndicator())
           : Column(
         children: [
           _HeaderStrip(chips: const ['2 Anak', '1 Tugas Menunggu']),
-          _AssistantBanner(onTap: _openAssistant), // <-- NEW
+          _AssistantBanner(onTap: _openAssistant),
+          _FamilyCodeCard(
+            code: _kDemoFamilyCode, // <-- static for now
+            onCopy: () async {
+              await Clipboard.setData(const ClipboardData(text: _kDemoFamilyCode));
+              if (!mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Kode keluarga disalin')),
+              );
+            },
+          ),
           _StatsGrid(),
           _buildTabBar(),
           Expanded(child: _buildTabBarView()),
@@ -253,6 +268,70 @@ class _AssistantBanner extends StatelessWidget {
   }
 }
 
+/// Family Code card (static for now)
+class _FamilyCodeCard extends StatelessWidget {
+  final String code;
+  final VoidCallback onCopy;
+  const _FamilyCodeCard({required this.code, required this.onCopy});
+
+  @override
+  Widget build(BuildContext context) {
+    final border = Colors.black.withOpacity(0.08);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: border),
+        ),
+        child: Row(
+          children: [
+            Container(
+              height: 38,
+              width: 38,
+              decoration: BoxDecoration(
+                color: const Color(0xFFEDEAFF),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFB9A7FF).withOpacity(0.5)),
+              ),
+              alignment: Alignment.center,
+              child: const Icon(Icons.qr_code_2, color: Color(0xFF7C4DFF)),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Kode Keluarga',
+                      style:
+                      TextStyle(fontSize: 12, color: Colors.black54)),
+                  const SizedBox(height: 2),
+                  Text(
+                    code,
+                    style: const TextStyle(
+                      fontSize: 18,
+                      letterSpacing: 2.0,
+                      fontFeatures: [FontFeature.tabularFigures()],
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            TextButton.icon(
+              onPressed: onCopy,
+              icon: const Icon(Icons.copy, size: 18),
+              label: const Text('Salin'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _AssistantAvatar extends StatelessWidget {
   const _AssistantAvatar();
 
@@ -272,7 +351,6 @@ class _AssistantAvatar extends StatelessWidget {
   }
 }
 
-/// Floating FAB with Hero to the assistant page
 class _AssistantFab extends StatelessWidget {
   final VoidCallback onTap;
   const _AssistantFab({required this.onTap});
@@ -280,7 +358,7 @@ class _AssistantFab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return FloatingActionButton.extended(
-      heroTag: 'ai-fab', // or set to null to disable Hero entirely
+      heroTag: 'ai-fab',
       onPressed: onTap,
       icon: const Icon(Icons.smart_toy_outlined),
       label: const Text('AI Assistant'),
@@ -288,8 +366,7 @@ class _AssistantFab extends StatelessWidget {
   }
 }
 
-
-/// Cleaner stats: neutral cards with colored icon pills (unchanged)
+/// Stats grid (unchanged)
 class _StatsGrid extends StatelessWidget {
   const _StatsGrid();
 
