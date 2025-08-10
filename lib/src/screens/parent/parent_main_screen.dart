@@ -5,6 +5,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/app_provider.dart';
 import '../../core/constants.dart';
 import '../../core/helpers.dart';
+import '../auth_wrapper.dart';
 import 'tabs/anak_tab.dart';
 import 'tabs/tugas_tab.dart';
 import 'tabs/uang_saku_tab.dart';
@@ -97,8 +98,18 @@ class _ParentMainScreenState extends State<ParentMainScreen>
         ),
         IconButton(
           tooltip: 'Keluar',
-          onPressed: () =>
-              Provider.of<AuthProvider>(context, listen: false).logout(),
+          onPressed: () async {
+            final app  = context.read<AppProvider>();
+            final auth = context.read<AuthProvider>();
+
+            app.clearDataOnLogout();
+            await auth.logout();
+            if (!mounted) return;
+            Navigator.of(context).pushAndRemoveUntil(
+              MaterialPageRoute(builder: (_) => const AuthWrapper()),
+                  (_) => false,
+            );
+          },
           icon: const Icon(Icons.logout),
         ),
         const SizedBox(width: 4),

@@ -1,45 +1,113 @@
 // lib/main.dart
-
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:provider/provider.dart';
 
-// PERBAIKAN 1: Tambahkan impor yang hilang
-import 'src/settings/settings_controller.dart';
-import 'src/settings/settings_service.dart';
-
-// PERBAIKAN: Impor provider dan layar yang dibutuhkan
-import 'src/app.dart'; // Asumsi MyApp ada di file ini
 import 'src/providers/app_provider.dart';
 import 'src/providers/auth_provider.dart';
-
+import 'src/core/constants.dart';
+import 'src/screens/auth_wrapper.dart';
+import 'src/settings/settings_controller.dart';
+import 'src/settings/settings_service.dart';
 import 'firebase_options.dart';
 
 void main() async {
-  // Pastikan semua binding siap sebelum menjalankan kode async
   WidgetsFlutterBinding.ensureInitialized();
-
-  // Inisialisasi Firebase
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
-
-  // Inisialisasi SettingsController
   final settingsController = SettingsController(SettingsService());
-
-  // Muat pengaturan tema pengguna
   await settingsController.loadSettings();
 
-  // PERBAIKAN 3: Menjalankan aplikasi dengan struktur yang benar
   runApp(
-    // Bungkus aplikasi dengan MultiProvider untuk state management
     MultiProvider(
       providers: [
-        ChangeNotifierProvider(create: (context) => AuthProvider()),
-        ChangeNotifierProvider(create: (context) => AppProvider()),
+        ChangeNotifierProvider(create: (_) => AuthProvider()..initialize()),
+        ChangeNotifierProvider(create: (_) => AppProvider()),
       ],
-      // Kirim settingsController ke MyApp
-      child: MyApp(settingsController: settingsController),
+      child: MaterialApp(
+        debugShowCheckedModeBanner: false,
+        home: const AuthWrapper(), // <- root
+      ),
     ),
   );
+}
+
+class MyApp extends StatelessWidget {
+  const MyApp({
+    super.key,
+    required this.settingsController,
+  });
+
+  final SettingsController settingsController;
+
+  @override
+  Widget build(BuildContext context) {
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(
+          create: (context) => AuthProvider()..initialize(),
+        ),
+        ChangeNotifierProxyProvider<AuthProvider, AppProvider>(
+          create: (context) => AppProvider(),
+          // This logic now handles both login and logout correctly
+          update: (context, authProvider, appProvider) {
+            if (appProvider == null) throw Exception("AppProvider is null");
+
+            // Check if the user state has changed
+            if (appProvider.currentUser?.id != authProvider.currentUser?.id) {
+              if (authProvider.currentUser == null) {
+                // User has logged out, so clear all app data and listeners.
+                appProvider.clearDataOnLogout();
+              } else {
+                // User has logged in or changed, so start listening to their data.
+                appProvider.listenToData(authProvider.currentUser!);
+              }
+            }
+            return appProvider;
+          },
+        ),
+      ],
+      child: ListenableBuilder(
+        listenable: settingsController,
+        builder: (BuildContext context, Widget? child) {
+          return MaterialApp(
+            restorationScopeId: 'app',
+            theme: _buildLightTheme(),
+            darkTheme: _buildDarkTheme(),
+            themeMode: settingsController.themeMode,
+            // Use AuthWrapper as the home screen for robust navigation
+            home: const AuthWrapper(),
+          );
+        },
+      ),
+    );
+  }
+
+  ThemeData _buildLightTheme() {
+    return ThemeData(
+      useMaterial3: true,
+      colorScheme: ColorScheme.fromSeed(
+        seedColor: AppColors.primary,
+        brightness: Brightness.light,
+      ),
+      scaffoldBackgroundColor: AppColors.background,
+      appBarTheme: const AppBarTheme(
+        elevation: 0,
+        centerTitle: true,
+        backgroundColor: Colors.transparent,
+        foregroundColor: AppColors.grey800,
+      ),
+    );
+  }
+
+  ThemeData _buildDarkTheme() {
+    return ThemeData(
+      useMaterial3: true,
+      colorScheme: ColorScheme.fromSeed(
+        seedColor: AppColors.primary,
+        brightness: Brightness.dark,
+      ),
+    );
+  }
 }

@@ -1,4 +1,4 @@
-// lib/src/providers/app_provider.dart (CORRECTED)
+// lib/src/providers/app_provider.dart
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../models/user.dart';
@@ -21,6 +21,9 @@ class AppProvider extends ChangeNotifier {
   Account? _parentAccount;
   List<Account> _childrenAccounts = [];
   List<User> _children = [];
+  List<local_transaction.Transaction> _transactions = [];
+  List<SavingsGoal> _savingsGoals = [];
+  List<Mission> _missions = [];
 
   StreamSubscription? _parentAccountSubscription;
   StreamSubscription? _childrenSubscription;
@@ -49,8 +52,13 @@ class AppProvider extends ChangeNotifier {
       _listenToParentData(_currentUser!.id);
     } else {
       // Logic for child user data can be added here
-      _setLoading(false);
     }
+    _setLoading(false);
+  }
+
+  // --- NEW: Method to safely clear data on logout ---
+  void clearDataOnLogout() {
+    _clearAllData();
   }
 
   void _listenToParentData(String parentId) {
@@ -66,10 +74,8 @@ class AppProvider extends ChangeNotifier {
           _listenToChildrenAccounts(childrenData);
           notifyListeners();
         });
-    _setLoading(false);
   }
 
-  // This method was missing in your local version.
   void _listenToChildrenAccounts(List<User> children) {
     final childrenIds = children.map((c) => c.id).toSet();
 
