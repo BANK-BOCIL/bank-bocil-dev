@@ -7,7 +7,6 @@ import '../../providers/app_provider.dart';
 import '../../core/constants.dart';
 import '../../core/helpers.dart';
 import '../auth_wrapper.dart';
-import '../assistant/ai_assistant_screen.dart';
 import 'tabs/anak_tab.dart';
 import 'tabs/tugas_tab.dart';
 import 'tabs/uang_saku_tab.dart';
@@ -58,13 +57,11 @@ class _ParentMainScreenState extends State<ParentMainScreen>
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: _buildAppBar(context, authProvider, parentColor),
-      floatingActionButton: _AssistantFab(onTap: _openAssistant),
       body: appProvider.isLoading
           ? const Center(child: CircularProgressIndicator())
           : Column(
         children: [
           _HeaderStrip(chips: const ['2 Anak', '1 Tugas Menunggu']),
-          _AssistantBanner(onTap: _openAssistant),
           _FamilyCodeCard(
             code: _kDemoFamilyCode, // <-- static for now
             onCopy: () async {
@@ -83,14 +80,6 @@ class _ParentMainScreenState extends State<ParentMainScreen>
     );
   }
 
-  void _openAssistant() {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => const AIAssistantScreen(),
-        settings: const RouteSettings(name: 'ai-assistant'),
-      ),
-    );
-  }
 
   PreferredSizeWidget _buildAppBar(
       BuildContext context, AuthProvider authProvider, Color color) {
@@ -118,11 +107,6 @@ class _ParentMainScreenState extends State<ParentMainScreen>
       ),
       actionsIconTheme: const IconThemeData(size: 20, color: Colors.white),
       actions: [
-        IconButton(
-          tooltip: 'Komunikasi',
-          onPressed: _openAssistant, // quick shortcut
-          icon: const Icon(Icons.message_outlined),
-        ),
         IconButton(
           tooltip: 'Keluar',
           onPressed: () async {
