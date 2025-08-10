@@ -1,6 +1,6 @@
 // lib/src/screens/parent/parent_main_screen.dart
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // <-- for Clipboard
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/app_provider.dart';
@@ -25,19 +25,17 @@ class _ParentMainScreenState extends State<ParentMainScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
 
-  // Static demo value. Later you can replace with:
-  // final code = context.read<AuthProvider>().currentUser?.childCode ?? '-';
-  static const String _kDemoFamilyCode = 'V5HPQ6';
-
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 6, vsync: this);
+
+    // Start listening to Firestore-backed provider data after first frame
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final authProvider = Provider.of<AuthProvider>(context, listen: false);
-      if (authProvider.currentUser != null) {
-        Provider.of<AppProvider>(context, listen: false)
-            .listenToData(authProvider.currentUser!);
+      final auth = context.read<AuthProvider>();
+      final user = auth.currentUser;
+      if (user != null) {
+        context.read<AppProvider>().listenToData(user);
       }
     });
   }
@@ -50,29 +48,48 @@ class _ParentMainScreenState extends State<ParentMainScreen>
 
   @override
   Widget build(BuildContext context) {
-    const Color parentColor = AppColors.purplePrimary;
-    final authProvider = Provider.of<AuthProvider>(context);
-    final appProvider = Provider.of<AppProvider>(context);
+    const parentColor = AppColors.purplePrimary;
+    final auth = context.watch<AuthProvider>();
+    final app = context.watch<AppProvider>();
+
+    // Derived, safe fallbacks
+    final parent = auth.currentUser;
+    final familyCode = parent?.childCode ?? '—';
+    final childrenCount = app.children.length;
+    final totalFamilyBalance = Helpers.formatCurrency(app.totalFamilyBalance);
+
+    // If you later stream missions for parent, plug the real count here.
+    const pendingTasksCount = 0;
 
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: _buildAppBar(context, authProvider, parentColor),
-      body: appProvider.isLoading
+      appBar: _buildAppBar(parentColor, parent?.name ?? 'Orang Tua'),
+      body: app.isLoading
           ? const Center(child: CircularProgressIndicator())
           : Column(
         children: [
-          _HeaderStrip(chips: const ['2 Anak', '1 Tugas Menunggu']),
+          _HeaderStrip(
+            chips: [
+              '$childrenCount Anak',
+              '$pendingTasksCount Tugas Aktif',
+            ],
+          ),
           _FamilyCodeCard(
-            code: _kDemoFamilyCode, // <-- static for now
+            code: familyCode,
             onCopy: () async {
-              await Clipboard.setData(const ClipboardData(text: _kDemoFamilyCode));
+              if (familyCode == '—') return;
+              await Clipboard.setData(ClipboardData(text: familyCode));
               if (!mounted) return;
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(content: Text('Kode keluarga disalin')),
               );
             },
           ),
-          _StatsGrid(),
+          _StatsGrid(
+            totalBalance: totalFamilyBalance,
+            childrenCount: childrenCount,
+            pendingTasks: pendingTasksCount,
+          ),
           _buildTabBar(),
           Expanded(child: _buildTabBarView()),
         ],
@@ -80,11 +97,7 @@ class _ParentMainScreenState extends State<ParentMainScreen>
     );
   }
 
-
-  PreferredSizeWidget _buildAppBar(
-      BuildContext context, AuthProvider authProvider, Color color) {
-    final user = authProvider.currentUser;
-
+  AppBar _buildAppBar(Color color, String name) {
     return AppBar(
       backgroundColor: color,
       foregroundColor: Colors.white,
@@ -98,7 +111,7 @@ class _ParentMainScreenState extends State<ParentMainScreen>
               style: TextStyle(fontWeight: FontWeight.w600)),
           const SizedBox(height: 2),
           Text(
-            'Selamat datang, ${user?.name ?? 'Orang Tua'}! ✨',
+            'Selamat datang, $name! ✨',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(fontSize: 12, color: Colors.white70),
@@ -112,7 +125,6 @@ class _ParentMainScreenState extends State<ParentMainScreen>
           onPressed: () async {
             final app = context.read<AppProvider>();
             final auth = context.read<AuthProvider>();
-
             app.clearDataOnLogout();
             await auth.logout();
             if (!mounted) return;
@@ -165,7 +177,7 @@ class _ParentMainScreenState extends State<ParentMainScreen>
   }
 }
 
-/// Compact chips under the app bar
+/// Chips under the app bar
 class _HeaderStrip extends StatelessWidget {
   final List<String> chips;
   const _HeaderStrip({required this.chips});
@@ -187,9 +199,10 @@ class _HeaderStrip extends StatelessWidget {
               color: Colors.black.withOpacity(0.06),
               borderRadius: BorderRadius.circular(20),
             ),
-            child: Text(c,
-                style:
-                const TextStyle(fontSize: 11, color: Colors.black87)),
+            child: Text(
+              c,
+              style: const TextStyle(fontSize: 11, color: Colors.black87),
+            ),
           ),
         )
             .toList(),
@@ -198,61 +211,7 @@ class _HeaderStrip extends StatelessWidget {
   }
 }
 
-/// Gradient banner CTA to open the assistant
-class _AssistantBanner extends StatelessWidget {
-  final VoidCallback onTap;
-  const _AssistantBanner({required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: onTap,
-        child: Ink(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            gradient: const LinearGradient(
-              colors: [Color(0xFF7C4DFF), Color(0xFF00BCD4)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-          ),
-          child: Row(
-            children: const [
-              _AssistantAvatar(),
-              SizedBox(width: 12),
-              Expanded(
-                child: Hero(
-                  tag: 'ai-assistant-title',
-                  child: Material(
-                    color: Colors.transparent,
-                    child: Text(
-                      'AI Assistant: ringkas pengeluaran, buat misi, dan rencana uang saku otomatis.',
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w600,
-                        height: 1.25,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              SizedBox(width: 8),
-              Icon(Icons.chevron_right, color: Colors.white),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Family Code card (static for now)
+/// Family Code card (now dynamic)
 class _FamilyCodeCard extends StatelessWidget {
   final String code;
   final VoidCallback onCopy;
@@ -261,6 +220,7 @@ class _FamilyCodeCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final border = Colors.black.withOpacity(0.08);
+    final isEmpty = code.trim().isEmpty || code == '—';
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
       child: Container(
@@ -278,7 +238,8 @@ class _FamilyCodeCard extends StatelessWidget {
               decoration: BoxDecoration(
                 color: const Color(0xFFEDEAFF),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFFB9A7FF).withOpacity(0.5)),
+                border: Border.all(
+                    color: const Color(0xFFB9A7FF).withOpacity(0.5)),
               ),
               alignment: Alignment.center,
               child: const Icon(Icons.qr_code_2, color: Color(0xFF7C4DFF)),
@@ -289,11 +250,10 @@ class _FamilyCodeCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text('Kode Keluarga',
-                      style:
-                      TextStyle(fontSize: 12, color: Colors.black54)),
+                      style: TextStyle(fontSize: 12, color: Colors.black54)),
                   const SizedBox(height: 2),
                   Text(
-                    code,
+                    isEmpty ? 'Belum ada' : code,
                     style: const TextStyle(
                       fontSize: 18,
                       letterSpacing: 2.0,
@@ -305,7 +265,7 @@ class _FamilyCodeCard extends StatelessWidget {
               ),
             ),
             TextButton.icon(
-              onPressed: onCopy,
+              onPressed: isEmpty ? null : onCopy,
               icon: const Icon(Icons.copy, size: 18),
               label: const Text('Salin'),
             ),
@@ -316,43 +276,17 @@ class _FamilyCodeCard extends StatelessWidget {
   }
 }
 
-class _AssistantAvatar extends StatelessWidget {
-  const _AssistantAvatar();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 38,
-      width: 38,
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.18),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white.withOpacity(0.28)),
-      ),
-      alignment: Alignment.center,
-      child: const Icon(Icons.smart_toy_outlined, color: Colors.white),
-    );
-  }
-}
-
-class _AssistantFab extends StatelessWidget {
-  final VoidCallback onTap;
-  const _AssistantFab({required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return FloatingActionButton.extended(
-      heroTag: 'ai-fab',
-      onPressed: onTap,
-      icon: const Icon(Icons.smart_toy_outlined),
-      label: const Text('AI Assistant'),
-    );
-  }
-}
-
-/// Stats grid (unchanged)
+/// Stats grid (dynamic)
 class _StatsGrid extends StatelessWidget {
-  const _StatsGrid();
+  final String totalBalance;
+  final int childrenCount;
+  final int pendingTasks;
+
+  const _StatsGrid({
+    required this.totalBalance,
+    required this.childrenCount,
+    required this.pendingTasks,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -367,31 +301,33 @@ class _StatsGrid extends StatelessWidget {
       crossAxisSpacing: 10,
       mainAxisSpacing: 10,
       childAspectRatio: aspect,
-      children: const [
-        InfoStatCard(
+      children: [
+        const InfoStatCard(
           title: 'Total Saldo Keluarga',
-          value: 'Rp 70.000',
+          // value injected below using copy with simple const? We'll pass via ctor
+          value: '',
           icon: Icons.account_balance_wallet_outlined,
           accentColor: AppColors.success,
-        ),
-        InfoStatCard(
-          title: 'Total Penghasilan',
-          value: 'Rp 130.000',
-          icon: Icons.trending_up,
-          accentColor: AppColors.bluePrimary,
-        ),
-        InfoStatCard(
+        ).withValue(totalBalance),
+        const InfoStatCard(
           title: 'Tugas Menunggu',
-          value: '1',
+          value: '',
           icon: Icons.hourglass_top_outlined,
           accentColor: AppColors.warning,
-        ),
-        InfoStatCard(
+        ).withValue('$pendingTasks'),
+        const InfoStatCard(
           title: 'Anak Aktif',
-          value: '2',
+          value: '',
           icon: Icons.person_outline,
           accentColor: AppColors.pinkPrimary,
-        ),
+        ).withValue('$childrenCount'),
+        // You can add another dynamic card here later (e.g., total transaksi bulan ini)
+        const InfoStatCard(
+          title: '—',
+          value: '',
+          icon: Icons.trending_up,
+          accentColor: AppColors.bluePrimary,
+        ).withValue('—'),
       ],
     );
   }
@@ -474,6 +410,16 @@ class InfoStatCard extends StatelessWidget {
       ),
     );
   }
+}
+
+// Tiny helper to keep the grid concise
+extension _InfoStatCardValue on InfoStatCard {
+  InfoStatCard withValue(String v) => InfoStatCard(
+    title: title,
+    value: v,
+    icon: icon,
+    accentColor: accentColor,
+  );
 }
 
 class _IconPill extends StatelessWidget {

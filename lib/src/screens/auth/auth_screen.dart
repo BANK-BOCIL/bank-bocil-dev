@@ -94,7 +94,7 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
                           ),
                           Helpers.verticalSpace(AppConstants.spacing24),
                           const Text(
-                            'BankBocil',
+                            'NabungYuk',
                             style: TextStyle(
                               fontSize: 32,
                               fontWeight: FontWeight.bold,

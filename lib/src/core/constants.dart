@@ -118,7 +118,7 @@ class AppColors {
 
 class AppConstants {
   // App Information
-  static const String appName = 'Bank Bocil';
+  static const String appName = 'NabungYuk';
   static const String appVersion = '1.0.0';
 
   // Age Ranges

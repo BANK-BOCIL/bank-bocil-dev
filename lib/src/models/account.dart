@@ -2,7 +2,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class Account {
-  final String userId; // This will be the same as the User ID
+  final String userId;
   final double balance;
   final DateTime lastUpdated;
 
@@ -13,18 +13,28 @@ class Account {
   });
 
   factory Account.fromFirestore(DocumentSnapshot<Map<String, dynamic>> doc) {
-    final data = doc.data()!;
+    final data = doc.data() ?? {};
+
+    final balanceNum = data['balance'];
+    final balance = (balanceNum is num) ? balanceNum.toDouble() : 0.0;
+
+    final lu = data['lastUpdated'];
+    final DateTime lastUpdated = switch (lu) {
+      Timestamp ts => ts.toDate(),
+      DateTime dt => dt,
+      _ => DateTime.now(), // fallback while server timestamp resolves
+    };
+
     return Account(
-      userId: doc.id,
-      balance: (data['balance'] as num).toDouble(),
-      lastUpdated: (data['lastUpdated'] as Timestamp).toDate(),
+      userId: (data['userId'] as String?) ?? doc.id,
+      balance: balance,
+      lastUpdated: lastUpdated,
     );
   }
 
-  Map<String, dynamic> toFirestore() {
-    return {
-      'balance': balance,
-      'lastUpdated': lastUpdated,
-    };
-  }
+  Map<String, dynamic> toFirestore() => {
+    'userId': userId,
+    'balance': balance,
+    'lastUpdated': Timestamp.fromDate(lastUpdated),
+  };
 }

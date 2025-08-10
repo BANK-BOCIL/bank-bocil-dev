@@ -16,9 +16,13 @@ class FirestoreService {
     return doc.exists ? User.fromFirestore(doc.data()!) : null;
   }
 
+  // FirestoreService.setUser
   Future<void> setUser(User user) {
-    return _db.collection('users').doc(user.id).set(user.toFirestore());
+    final data = user.toFirestore();
+    data['nameLower'] = user.name.trim().toLowerCase();
+    return _db.collection('users').doc(user.id).set(data);
   }
+
 
   // --- Account Methods ---
   Future<void> createAccount(String userId) {
@@ -30,12 +34,56 @@ class FirestoreService {
     return _db.collection('accounts').doc(userId).set(account.toFirestore());
   }
 
-  // Listens for real-time updates on an account.
+  Future<void> createSavingsGoal(SavingsGoal goal) async {
+    // keep the provided id if you passed one; otherwise generate one
+    final goals = _db.collection('savings_goals');
+    final docId = goal.id ?? goals.doc().id;
+    await goals.doc(docId).set(
+      goal.copyWith(id: docId).toFirestore(),
+      SetOptions(merge: false),
+    );
+  }
+
   Stream<Account?> getAccountStream(String userId) {
     return _db.collection('accounts').doc(userId).snapshots().map((doc) {
-      return doc.exists ? Account.fromFirestore(doc) : null;
+      try {
+        return doc.exists ? Account.fromFirestore(doc) : null;
+      } catch (e) {
+        debugPrint('Account parse error ($userId): $e');
+        return null;
+      }
     });
   }
+
+
+
+  Future<void> updateSavingsGoal(SavingsGoal goal) async {
+    final ref = _db.collection('savings_goals')
+        .doc(goal.id ?? _db.collection('savings_goals').doc().id);
+    await ref.set(goal.toFirestore(), SetOptions(merge: true));
+  }
+
+  Future<void> updateMissionStatus(String missionId, String status) async {
+    await _db.collection('missions').doc(missionId).update({
+      'status': status, // e.g., 'completed'
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  Future<void> addTransaction(app_transaction.Transaction tx) async {
+    final ref = _db.collection('transactions').doc(tx.id);
+    await ref.set(tx.toFirestore());
+  }
+
+  Future<void> updateUserSettings(String userId, Map<String, dynamic> data) {
+    return _db.collection('users').doc(userId).set(data, SetOptions(merge: true));
+  }
+
+  Future<Map<String, dynamic>?> getUserPrefs(String userId) async {
+    final snap = await _db.collection('users').doc(userId).get();
+    return snap.data();
+  }
+
 
   Future<void> updateAccountBalance(String userId, double amount) {
     final accountRef = _db.collection('accounts').doc(userId);

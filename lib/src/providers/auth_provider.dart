@@ -1,5 +1,7 @@
 // lib/src/providers/auth_provider.dart
 
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -13,6 +15,7 @@ class AuthProvider extends ChangeNotifier {
 
   final firebase_auth.FirebaseAuth _auth = firebase_auth.FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  StreamSubscription<firebase_auth.User?>? _authSub;
 
   User? get currentUser => _currentUser;
   bool get isLoading => _isLoading;
@@ -20,12 +23,25 @@ class AuthProvider extends ChangeNotifier {
   bool get isAuthenticated => _auth.currentUser != null;
 
   Future<void> initialize() async {
-    _setLoading(true);
-    final firebaseUser = _auth.currentUser;
-    if (firebaseUser != null) {
-      await _fetchUserData(firebaseUser.uid);
-    }
-    _setLoading(false);
+    await _authSub?.cancel();
+    _authSub = _auth.authStateChanges().listen((fbUser) async {
+      _setLoading(true);
+      if (fbUser == null) {
+        _currentUser = null;
+        _setLoading(false);
+        return;
+      }
+      // load our user doc
+      final snap = await _firestore.collection('users').doc(fbUser.uid).get();
+      _currentUser = snap.exists ? User.fromFirestore(snap.data()!) : null;
+      _setLoading(false);
+    });
+  }
+
+  @override
+  void dispose() {
+    _authSub?.cancel();
+    super.dispose();
   }
 
   Future<void> _fetchUserData(String uid) async {
@@ -83,6 +99,12 @@ class AuthProvider extends ChangeNotifier {
           .doc(parentId)
           .set(newUser.toFirestore());
 
+      await _firestore.collection('parentChildCodes').doc(childCode).set({
+        'parentId': parentId,
+        'createdAt': FieldValue.serverTimestamp(),
+        'active': true,
+      });
+
       _currentUser = newUser;
       notifyListeners();
       return newUser;
@@ -107,6 +129,16 @@ class AuthProvider extends ChangeNotifier {
         password: password,
       );
       await _fetchUserData(userCredential.user!.uid);
+      if (_currentUser?.childCode != null && _currentUser!.childCode!.isNotEmpty) {
+        await _firestore.collection('parentChildCodes')
+            .doc(_currentUser!.childCode!)
+            .set({
+          'parentId': _currentUser!.id,
+          'parentName': _currentUser!.name,
+          'createdAt': FieldValue.serverTimestamp(),
+          'active': true,
+        }, SetOptions(merge: true));
+      }
       return _currentUser;
     } on firebase_auth.FirebaseAuthException catch (e) {
       _setError(e.message ?? 'Gagal login.');
@@ -123,62 +155,77 @@ class AuthProvider extends ChangeNotifier {
   }) async {
     _setLoading(true);
     _clearError();
+
     try {
-      // 1. Lakukan sign-in anonim DULU untuk mendapatkan UID yang stabil untuk perangkat ini
-      final userCredential = await _auth.signInAnonymously();
-      final childUid = userCredential.user!.uid;
+      // Ensure signed-in FIRST (anonymous OK)
+      firebase_auth.User? fb = _auth.currentUser;
+      if (fb == null) {
+        fb = (await _auth.signInAnonymously()).user;
+      } else if (!fb.isAnonymous) {
+        // parent logged in: swap to anonymous *immediately*
+        await _auth.signOut();
+        fb = (await _auth.signInAnonymously()).user;
+      }
+      final uid = fb!.uid;
 
-      // 2. Cek apakah dokumen untuk UID ini sudah ada di Firestore
-      final userDocRef = _firestore.collection('users').doc(childUid);
-      final userDocSnapshot = await userDocRef.get();
+      final db = FirebaseFirestore.instance;
+      final code = childCode.trim().toUpperCase();
 
-      if (userDocSnapshot.exists) {
-        // Jika user sudah ada, cukup load datanya
-        _currentUser = User.fromFirestore(userDocSnapshot.data()!);
-        // Anda bisa menambahkan logika update `lastLoginAt` di sini jika perlu
-        await userDocRef.update({'lastLoginAt': DateTime.now()});
-      } else {
-        // Jika user belum ada, ini adalah pendaftaran pertama kali
-        // Cari parent berdasarkan childCode
-        final querySnapshot = await _firestore
-            .collection('users')
-            .where('role', isEqualTo: 'UserType.parent')
-            .where('childCode', isEqualTo: childCode.toUpperCase())
-            .limit(1)
-            .get();
-
-        if (querySnapshot.docs.isEmpty) {
-          _setError('Kode anak tidak valid atau tidak ditemukan.');
-          // Hapus user anonim yang baru dibuat karena pendaftaran gagal
-          await userCredential.user?.delete();
-          return null;
-        }
-
-        final parentDoc = querySnapshot.docs.first;
-        final parentId = parentDoc.id;
-        final ageTier = _getAgeTierFromAge(age);
-
-        // Buat objek user baru
-        final newUser = User(
-          id: childUid, // Gunakan UID dari hasil sign-in anonim
-          name: childName,
-          type: UserType.child,
-          parentId: parentId,
-          age: age,
-          ageTier: ageTier,
-          createdAt: DateTime.now(),
-          lastLoginAt: DateTime.now(),
-        );
-
-        // Simpan user baru ke Firestore
-        await userDocRef.set(newUser.toFirestore());
-        _currentUser = newUser;
+      // read parentId (needs auth, we have it)
+      final codeSnap = await db.collection('parentChildCodes').doc(code).get();
+      final parentId = codeSnap.data()?['parentId'] as String?;
+      if (parentId == null) {
+        _setError('Kode anak tidak valid atau tidak ditemukan');
+        return null;
       }
 
+      final normalized = childName.trim();
+      final nameLower = normalized.toLowerCase().replaceAll(' ', '_');
+
+      // fast name-claim (avoid querying other users)
+      final claimRef = db.collection('parentChildCodes')
+          .doc(code)
+          .collection('claimedNames')
+          .doc(nameLower);
+
+      if ((await claimRef.get()).exists) {
+        _setError('Nama "$normalized" sudah dipakai di keluarga ini. Coba variasi lain 🙏');
+        return null;
+      }
+
+      await claimRef.set({
+        'ownerUid': uid,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+
+      final tier = _getAgeTierFromAge(age) ?? AgeTier.tingkat1;
+
+      final childUser = User(
+        id: uid,
+        name: normalized,
+        age: age,
+        type: UserType.child,
+        ageTier: tier,
+        parentId: parentId,
+        createdAt: DateTime.now(),
+        lastLoginAt: DateTime.now(),
+      );
+
+      final userData = childUser.toFirestore()..['nameLower'] = nameLower;
+
+      // create user + account with concrete timestamp (no null Timestamp)
+      await db.collection('users').doc(uid).set(userData);
+      await db.collection('accounts').doc(uid).set({
+        'userId': uid,
+        'balance': 0.0,
+        'lastUpdated': Timestamp.now(),
+      });
+
+      _currentUser = childUser; // set immediately so UI can route without waiting a re-read
       notifyListeners();
-      return _currentUser;
+      return childUser;
     } catch (e) {
-      _setError('Terjadi kesalahan saat login anak: $e');
+      _setError('Gagal masuk: $e');
       return null;
     } finally {
       _setLoading(false);
@@ -204,7 +251,7 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void _setError(String error) {
+  void _setError(String? error) {
     _error = error;
     notifyListeners();
   }

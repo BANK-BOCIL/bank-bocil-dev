@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../core/constants.dart';
 import '../../core/helpers.dart';
 import '../../providers/auth_provider.dart';
+import '../auth_wrapper.dart';
 
 class ChildAuthScreen extends StatefulWidget {
   const ChildAuthScreen({super.key});
@@ -30,15 +31,23 @@ class _ChildAuthScreenState extends State<ChildAuthScreen> {
     FocusScope.of(context).unfocus();
     if (!_formKey.currentState!.validate()) return;
 
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    await authProvider.loginChild(
+    final auth = context.read<AuthProvider>();
+    final user = await auth.loginChild(
       childCode: _codeController.text.trim(),
       childName: _nameController.text.trim(),
       age: int.tryParse(_ageController.text.trim()) ?? 0,
     );
 
-    if (mounted && authProvider.error != null) {
-      Helpers.showSnackBar(context, authProvider.error!);
+    if (!mounted) return;
+
+    if (user != null) {
+      // IMPORTANT: go back to the root wrapper so it renders the correct tier page
+      Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const AuthWrapper()),
+            (_) => false,
+      );
+    } else if (auth.error != null) {
+      Helpers.showSnackBar(context, auth.error!);
     }
   }
 
@@ -51,14 +60,11 @@ class _ChildAuthScreenState extends State<ChildAuthScreen> {
         child: Form(
           key: _formKey,
           child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Text(
-                'Halo, Anak Pintar! 👋',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-              ),
+              const Text('Halo, Anak Pintar! 👋',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
               Helpers.verticalSpace(AppConstants.spacing8),
               const Text(
                 'Masukkan kode dari orang tua untuk memulai petualangan menabung!',
@@ -70,10 +76,9 @@ class _ChildAuthScreenState extends State<ChildAuthScreen> {
                 controller: _codeController,
                 textCapitalization: TextCapitalization.characters,
                 decoration: const InputDecoration(labelText: 'Kode Anak'),
-                validator: (value) {
-                  if (value?.trim().isEmpty ?? true)
-                    return 'Kode tidak boleh kosong';
-                  if (value!.trim().length != 6) return 'Kode harus 6 karakter';
+                validator: (v) {
+                  if (v?.trim().isEmpty ?? true) return 'Kode tidak boleh kosong';
+                  if (v!.trim().length != 6) return 'Kode harus 6 karakter';
                   return null;
                 },
               ),
@@ -81,7 +86,7 @@ class _ChildAuthScreenState extends State<ChildAuthScreen> {
               TextFormField(
                 controller: _nameController,
                 decoration: const InputDecoration(labelText: 'Nama Kamu'),
-                validator: (value) => (value?.trim().isEmpty ?? true)
+                validator: (v) => (v?.trim().isEmpty ?? true)
                     ? 'Nama tidak boleh kosong'
                     : null,
               ),
@@ -90,32 +95,28 @@ class _ChildAuthScreenState extends State<ChildAuthScreen> {
                 controller: _ageController,
                 keyboardType: TextInputType.number,
                 decoration: const InputDecoration(labelText: 'Umur Kamu'),
-                validator: (value) {
-                  if (value?.trim().isEmpty ?? true)
-                    return 'Umur tidak boleh kosong';
-                  if (int.tryParse(value!) == null) return 'Umur harus angka';
+                validator: (v) {
+                  if (v?.trim().isEmpty ?? true) return 'Umur tidak boleh kosong';
+                  if (int.tryParse(v!) == null) return 'Umur harus angka';
                   return null;
                 },
               ),
               Helpers.verticalSpace(AppConstants.spacing32),
               Consumer<AuthProvider>(
-                builder: (context, auth, child) {
-                  return ElevatedButton(
-                    onPressed: auth.isLoading ? null : _handleLogin,
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(
-                          vertical: AppConstants.spacing16),
-                      backgroundColor: AppColors.tingkat1Primary,
-                    ),
-                    child: auth.isLoading
-                        ? const SizedBox(
-                            height: 20,
-                            width: 20,
-                            child: CircularProgressIndicator(
-                                strokeWidth: 2, color: Colors.white))
-                        : const Text('Masuk Sekarang! 🚀'),
-                  );
-                },
+                builder: (context, auth, _) => ElevatedButton(
+                  onPressed: auth.isLoading ? null : _handleLogin,
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(
+                        vertical: AppConstants.spacing16),
+                    backgroundColor: AppColors.tingkat1Primary,
+                  ),
+                  child: auth.isLoading
+                      ? const SizedBox(
+                      height: 20, width: 20,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white))
+                      : const Text('Masuk Sekarang! 🚀'),
+                ),
               ),
             ],
           ),
