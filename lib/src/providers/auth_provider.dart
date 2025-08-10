@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:math';
-import '../models/user.dart'; // Pastikan model User sudah ada dan benar
+import '../models/user.dart';
 
 class AuthProvider extends ChangeNotifier {
   User? _currentUser;
@@ -17,25 +17,36 @@ class AuthProvider extends ChangeNotifier {
   User? get currentUser => _currentUser;
   bool get isLoading => _isLoading;
   String? get error => _error;
-  bool get isAuthenticated => _auth.currentUser != null;
+  bool get isAuthenticated => _currentUser != null;
 
   Future<void> initialize() async {
     _setLoading(true);
-    final firebaseUser = _auth.currentUser;
-    if (firebaseUser != null) {
-      await _fetchUserData(firebaseUser.uid);
-    }
+    // Dengarkan perubahan status auth secara real-time
+    _auth.authStateChanges().listen((firebaseUser) {
+      if (firebaseUser != null) {
+        _fetchUserData(firebaseUser.uid);
+      } else {
+        _currentUser = null;
+        notifyListeners();
+      }
+    });
     _setLoading(false);
   }
 
   Future<void> _fetchUserData(String uid) async {
-    final userDoc = await _firestore.collection('users').doc(uid).get();
-    if (userDoc.exists) {
-      _currentUser = User.fromFirestore(userDoc.data()!);
-    } else {
+    try {
+      final userDoc = await _firestore.collection('users').doc(uid).get();
+      if (userDoc.exists) {
+        _currentUser = User.fromFirestore(userDoc.data()!);
+      } else {
+        _currentUser = null;
+      }
+    } catch (e) {
+      print('Error fetching user data: $e');
       _currentUser = null;
+    } finally {
+      notifyListeners();
     }
-    notifyListeners();
   }
 
   AgeTier? _getAgeTierFromAge(int age) {
@@ -49,7 +60,6 @@ class AuthProvider extends ChangeNotifier {
     return null;
   }
 
-  // PERBAIKAN: Mengembalikan User? dan menambahkan `age` sebagai parameter.
   Future<User?> registerParent({
     required String email,
     required String password,
@@ -63,7 +73,6 @@ class AuthProvider extends ChangeNotifier {
         email: email,
         password: password,
       );
-      await userCredential.user?.updateDisplayName(name);
       final String parentId = userCredential.user!.uid;
       final String childCode = _generateChildCode();
 
@@ -72,16 +81,21 @@ class AuthProvider extends ChangeNotifier {
         name: name,
         type: UserType.parent,
         age: age,
-        ageTier: null,
         childCode: childCode,
-        parentId: null,
         createdAt: DateTime.now(),
         lastLoginAt: DateTime.now(),
       );
+
+      // Simpan data user parent
       await _firestore
           .collection('users')
           .doc(parentId)
           .set(newUser.toFirestore());
+
+      // Simpan childCode untuk pencarian publik
+      await _firestore.collection('parentChildCodes').doc(childCode).set({
+        'parentId': parentId,
+      });
 
       _currentUser = newUser;
       notifyListeners();
@@ -94,7 +108,6 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  // PERBAIKAN: Mengembalikan User? agar bisa langsung digunakan setelah login.
   Future<User?> loginParent({
     required String email,
     required String password,
@@ -116,6 +129,7 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  // --- FUNGSI LOGIN ANAK YANG SUDAH DIPERBAIKI ---
   Future<User?> loginChild({
     required String childCode,
     required String childName,
@@ -124,7 +138,7 @@ class AuthProvider extends ChangeNotifier {
     _setLoading(true);
     _clearError();
     try {
-      // 1. Lakukan sign-in anonim DULU untuk mendapatkan UID yang stabil untuk perangkat ini
+      // 1. Lakukan sign-in anonim DULU untuk mendapatkan sesi Auth yang nyata
       final userCredential = await _auth.signInAnonymously();
       final childUid = userCredential.user!.uid;
 
@@ -133,34 +147,27 @@ class AuthProvider extends ChangeNotifier {
       final userDocSnapshot = await userDocRef.get();
 
       if (userDocSnapshot.exists) {
-        // Jika user sudah ada, cukup load datanya
+        // Jika anak sudah pernah login di perangkat ini, cukup load datanya
         _currentUser = User.fromFirestore(userDocSnapshot.data()!);
-        // Anda bisa menambahkan logika update `lastLoginAt` di sini jika perlu
         await userDocRef.update({'lastLoginAt': DateTime.now()});
       } else {
-        // Jika user belum ada, ini adalah pendaftaran pertama kali
-        // Cari parent berdasarkan childCode
-        final querySnapshot = await _firestore
-            .collection('users')
-            .where('role', isEqualTo: 'UserType.parent')
-            .where('childCode', isEqualTo: childCode.toUpperCase())
-            .limit(1)
+        // Jika ini login pertama kali di perangkat ini, buat dokumen baru
+        final codeDoc = await _firestore
+            .collection('parentChildCodes')
+            .doc(childCode.toUpperCase())
             .get();
 
-        if (querySnapshot.docs.isEmpty) {
+        if (!codeDoc.exists) {
           _setError('Kode anak tidak valid atau tidak ditemukan.');
-          // Hapus user anonim yang baru dibuat karena pendaftaran gagal
-          await userCredential.user?.delete();
+          await userCredential.user?.delete(); // Hapus user anonim yang gagal
           return null;
         }
 
-        final parentDoc = querySnapshot.docs.first;
-        final parentId = parentDoc.id;
+        final parentId = codeDoc.data()!['parentId'] as String;
         final ageTier = _getAgeTierFromAge(age);
 
-        // Buat objek user baru
         final newUser = User(
-          id: childUid, // Gunakan UID dari hasil sign-in anonim
+          id: childUid,
           name: childName,
           type: UserType.child,
           parentId: parentId,
@@ -170,7 +177,6 @@ class AuthProvider extends ChangeNotifier {
           lastLoginAt: DateTime.now(),
         );
 
-        // Simpan user baru ke Firestore
         await userDocRef.set(newUser.toFirestore());
         _currentUser = newUser;
       }
@@ -186,14 +192,14 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> logout() async {
+    // Sekarang logout berlaku untuk semua user karena semua punya sesi Auth
     await _auth.signOut();
     _currentUser = null;
     notifyListeners();
   }
 
   String _generateChildCode() {
-    const chars =
-        'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Menghindari karakter ambigu
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     final random = Random.secure();
     return String.fromCharCodes(Iterable.generate(
         6, (_) => chars.codeUnitAt(random.nextInt(chars.length))));
