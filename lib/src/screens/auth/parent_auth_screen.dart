@@ -25,8 +25,8 @@ class _ParentAuthScreenState extends State<ParentAuthScreen> {
   final _confirmPasswordController = TextEditingController();
   final _ageController = TextEditingController();
 
-  bool _obscurePassword = true;
-  bool _obscureConfirmPassword = true;
+  bool _obscurePassword = false;
+  bool _obscureConfirmPassword = false;
 
   @override
   void dispose() {
