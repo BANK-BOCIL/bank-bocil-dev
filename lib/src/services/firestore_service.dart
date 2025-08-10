@@ -1,5 +1,6 @@
 // lib/src/services/firestore_service.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/cupertino.dart';
 import '../models/user.dart';
 import '../models/account.dart';
 import '../models/transaction.dart' as app_transaction;
@@ -47,13 +48,16 @@ class FirestoreService {
   // --- Parent-Specific Methods ---
   // Listens for real-time updates when children are added/removed.
   Stream<List<User>> getChildrenStream(String parentId) {
-    return _db
-        .collection('users')
+    return _db.collection('users')
         .where('parentId', isEqualTo: parentId)
         .snapshots()
-        .map((snapshot) =>
-        snapshot.docs.map((doc) => User.fromFirestore(doc.data())).toList());
+        .handleError((e) {
+      debugPrint('getChildrenStream error: $e'); // don’t crash UI
+    })
+        .map((snap) => snap.docs.map((d) => User.fromFirestore(d.data())).toList());
   }
+
+
 
   // --- Data Streams for Children ---
   Stream<List<Mission>> getMissionsStream(String userId) {
