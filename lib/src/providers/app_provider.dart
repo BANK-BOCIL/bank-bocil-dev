@@ -1,201 +1,151 @@
-// lib/src/providers/app_provider.dart
+// lib/src/providers/app_provider.dart (CORRECTED)
+import 'dart:async';
 import 'package:flutter/foundation.dart';
-import 'package:cloud_firestore/cloud_firestore.dart' as firestore;
 import '../models/user.dart';
+import '../models/account.dart';
 import '../models/transaction.dart' as local_transaction;
 import '../models/savings_goal.dart';
 import '../models/mission.dart';
 import '../models/budget.dart';
 import '../core/constants.dart';
+import '../services/firestore_service.dart';
 
 class AppProvider extends ChangeNotifier {
-  final firestore.FirebaseFirestore _firestore =
-      firestore.FirebaseFirestore.instance;
+  final FirestoreService _firestoreService = FirestoreService();
 
-  // --- STATE VARIABLES ---
   User? _currentUser;
   bool _isLoading = false;
   String? _error;
-  bool _isNotificationEnabled = true;
   ThemeColor _currentTheme = ThemeColor.pink;
 
-  // BARU: State untuk mengelola anak yang sedang dilihat oleh orang tua
-  User? _selectedChild;
-
-  // Deklarasi list data
+  Account? _parentAccount;
+  List<Account> _childrenAccounts = [];
   List<User> _children = [];
-  List<local_transaction.Transaction> _transactions = [];
-  List<SavingsGoal> _savingsGoals = [];
-  List<Mission> _missions = [];
-  List<Budget> _budgets = [];
 
-  // --- GETTERS ---
+  StreamSubscription? _parentAccountSubscription;
+  StreamSubscription? _childrenSubscription;
+  final Map<String, StreamSubscription> _childrenAccountSubscriptions = {};
+
   User? get currentUser => _currentUser;
-  User? get selectedChild => _selectedChild; // Getter untuk anak yang dipilih
+  Account? get parentAccount => _parentAccount;
+  List<Account> get childrenAccounts => _childrenAccounts;
+  List<User> get children => _children;
   bool get isLoading => _isLoading;
   String? get error => _error;
-  bool get isNotificationEnabled => _isNotificationEnabled;
   ThemeColor get currentTheme => _currentTheme;
 
-  // Getter data, sekarang lebih dinamis
-  List<User> get children => _children;
-  List<local_transaction.Transaction> get transactions => _transactions;
-  List<SavingsGoal> get savingsGoals => _savingsGoals;
-  List<Mission> get missions => _missions;
-  List<Budget> get budgets => _budgets;
+  double get totalFamilyBalance {
+    return _childrenAccounts.fold(0.0, (sum, account) => sum + account.balance);
+  }
 
-  // --- PUBLIC METHODS ---
+  void listenToData(User user) {
+    if (_currentUser?.id == user.id) return;
 
-  // PERBAIKAN: fetchInitialData dipanggil setelah login berhasil.
-  // Logikanya sekarang bercabang tergantung tipe user.
-  Future<void> fetchInitialData(User user) async {
     _setLoading(true);
-    _clearError();
-    _clearAllData(); // Bersihkan data lama sebelum fetch
+    _clearAllData();
     _currentUser = user;
 
-    try {
-      if (_currentUser!.type == UserType.parent) {
-        // Jika orang tua, hanya fetch daftar anaknya.
-        // Data spesifik (misi, dll) akan di-fetch saat anak dipilih.
-        await _fetchChildren(_currentUser!.id);
-      } else {
-        // Jika anak, langsung fetch semua data miliknya.
-        await _fetchDataForUser(_currentUser!.id);
+    if (_currentUser!.type == UserType.parent) {
+      _listenToParentData(_currentUser!.id);
+    } else {
+      // Logic for child user data can be added here
+      _setLoading(false);
+    }
+  }
+
+  void _listenToParentData(String parentId) {
+    _parentAccountSubscription =
+        _firestoreService.getAccountStream(parentId).listen((account) {
+          _parentAccount = account;
+          notifyListeners();
+        });
+
+    _childrenSubscription =
+        _firestoreService.getChildrenStream(parentId).listen((childrenData) {
+          _children = childrenData;
+          _listenToChildrenAccounts(childrenData);
+          notifyListeners();
+        });
+    _setLoading(false);
+  }
+
+  // This method was missing in your local version.
+  void _listenToChildrenAccounts(List<User> children) {
+    final childrenIds = children.map((c) => c.id).toSet();
+
+    _childrenAccountSubscriptions.keys
+        .where((id) => !childrenIds.contains(id))
+        .toList()
+        .forEach((id) {
+      _childrenAccountSubscriptions[id]?.cancel();
+      _childrenAccountSubscriptions.remove(id);
+      _childrenAccounts.removeWhere((acc) => acc.userId == id);
+    });
+
+    for (final child in children) {
+      if (!_childrenAccountSubscriptions.containsKey(child.id)) {
+        _childrenAccountSubscriptions[child.id] =
+            _firestoreService.getAccountStream(child.id).listen((account) {
+              _childrenAccounts.removeWhere((acc) => acc.userId == child.id);
+              if (account != null) {
+                _childrenAccounts.add(account);
+              }
+              notifyListeners();
+            });
       }
-    } catch (e) {
-      _setError('Gagal memuat data awal: $e');
-    } finally {
-      _setLoading(false);
     }
   }
 
-  // BARU: Metode untuk memilih anak dan memuat datanya (dipanggil dari UI).
-  Future<void> selectChild(User child) async {
-    if (_currentUser?.type != UserType.parent) return;
-
-    _selectedChild = child;
-    notifyListeners(); // Update UI untuk menunjukkan anak yang dipilih
-    await _fetchDataForUser(child.id);
-  }
-
-  // BARU: Metode untuk membersihkan data anak yang dipilih.
-  void clearSelectedChild() {
-    _selectedChild = null;
-    _clearAllData(clearChildren: false); // Jangan hapus daftar anak
-    notifyListeners();
-  }
-
-  // --- METHODS UNTUK INTERAKSI DENGAN FIRESTORE ---
-
-  // PERBAIKAN: Logika CRUD sekarang lebih efisien.
-  // Hanya me-refresh data yang relevan, bukan semuanya.
-  // Asumsi: Objek 'mission' memiliki properti 'userId'.
-  Future<void> addMission(Mission mission) async {
-    _setLoading(true);
-    _clearError();
-    try {
-      await _firestore.collection('missions').add(mission.toFirestore());
-      // Refresh hanya data misi untuk user yang bersangkutan.
-      await _fetchMissions(mission.userId);
-    } catch (e) {
-      _setError('Gagal menambahkan misi: $e');
-    } finally {
-      _setLoading(false);
-    }
-  }
-
-  Future<void> updateMission(Mission updatedMission) async {
-    _setLoading(true);
-    _clearError();
-    try {
-      if (updatedMission.id != null) {
-        await _firestore
-            .collection('missions')
-            .doc(updatedMission.id)
-            .update(updatedMission.toFirestore());
-        // Refresh hanya data misi untuk user yang bersangkutan.
-        await _fetchMissions(updatedMission.userId);
-      }
-    } catch (e) {
-      _setError('Gagal memperbarui misi: $e');
-    } finally {
-      _setLoading(false);
-    }
-  }
-
-  // Metode lain (addTransaction, updateTransaction, dsb.) harus mengikuti pola yang sama.
-
-  // --- PRIVATE FETCH METHODS ---
-
-  // BARU: Metode terpusat untuk fetch semua data milik satu user (parent/child).
-  Future<void> _fetchDataForUser(String userId) async {
+  Future<void> addFundsToParentAccount(double amount) async {
+    if (_currentUser == null || amount <= 0) return;
     _setLoading(true);
     try {
-      await _fetchMissions(userId);
-      await _fetchTransactions(userId);
-      await _fetchSavingsGoals(userId);
-      // Tambahkan fetch data lain di sini jika ada.
+      await _firestoreService.updateAccountBalance(_currentUser!.id, amount);
     } catch (e) {
-      _setError('Gagal memuat data untuk user $userId: $e');
-      rethrow; // Lempar kembali agar bisa ditangkap oleh pemanggil
+      _setError("Gagal menambahkan dana: $e");
     } finally {
       _setLoading(false);
     }
   }
 
-  Future<void> _fetchChildren(String parentId) async {
-    final childrenSnapshot = await _firestore
-        .collection('users')
-        .where('parentId', isEqualTo: parentId)
-        .get();
-    _children = childrenSnapshot.docs
-        .map((doc) => User.fromFirestore(doc.data()))
-        .toList();
+  Future<void> transferFundsToChild(String childId, double amount) async {
+    if (_currentUser == null ||
+        amount <= 0 ||
+        (_parentAccount?.balance ?? 0) < amount) {
+      _setError("Dana tidak mencukupi atau jumlah tidak valid.");
+      return;
+    }
+    _setLoading(true);
+    try {
+      await _firestoreService.updateAccountBalance(_currentUser!.id, -amount);
+      await _firestoreService.updateAccountBalance(childId, amount);
+    } catch (e) {
+      _setError("Gagal mentransfer dana: $e");
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  void _clearAllData() {
+    _cancelSubscriptions();
+    _children = [];
+    _parentAccount = null;
+    _childrenAccounts = [];
+    _currentUser = null;
     notifyListeners();
   }
 
-  Future<void> _fetchMissions(String userId) async {
-    final missionsSnapshot = await _firestore
-        .collection('missions')
-        .where('userId', isEqualTo: userId)
-        .get();
-    _missions =
-        missionsSnapshot.docs.map((doc) => Mission.fromFirestore(doc)).toList();
-    notifyListeners();
+  void _cancelSubscriptions() {
+    _parentAccountSubscription?.cancel();
+    _childrenSubscription?.cancel();
+    _childrenAccountSubscriptions.values.forEach((sub) => sub.cancel());
+    _childrenAccountSubscriptions.clear();
   }
 
-  Future<void> _fetchTransactions(String userId) async {
-    final transactionsSnapshot = await _firestore
-        .collection('transactions')
-        .where('userId', isEqualTo: userId)
-        .get();
-    _transactions = transactionsSnapshot.docs
-        .map((doc) => local_transaction.Transaction.fromFirestore(doc))
-        .toList();
-    notifyListeners();
-  }
-
-  Future<void> _fetchSavingsGoals(String userId) async {
-    final goalsSnapshot = await _firestore
-        .collection('savings_goals')
-        .where('userId', isEqualTo: userId)
-        .get();
-    _savingsGoals = goalsSnapshot.docs
-        .map((doc) => SavingsGoal.fromFirestore(doc))
-        .toList();
-    notifyListeners();
-  }
-
-  // --- UTILITY METHODS ---
-
-  void _clearAllData({bool clearChildren = true}) {
-    if (clearChildren) _children = [];
-    _transactions = [];
-    _savingsGoals = [];
-    _missions = [];
-    _budgets = [];
-    _selectedChild = null;
+  @override
+  void dispose() {
+    _cancelSubscriptions();
+    super.dispose();
   }
 
   void _setLoading(bool loading) {
@@ -205,11 +155,6 @@ class AppProvider extends ChangeNotifier {
 
   void _setError(String? error) {
     _error = error;
-    notifyListeners();
-  }
-
-  void _clearError() {
-    _error = null;
     notifyListeners();
   }
 }
