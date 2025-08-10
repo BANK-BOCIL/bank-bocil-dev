@@ -6,6 +6,7 @@ import '../../providers/app_provider.dart';
 import '../../core/constants.dart';
 import '../../core/helpers.dart';
 import '../auth_wrapper.dart';
+import '../assistant/ai_assistant_screen.dart'; // <-- NEW
 import 'tabs/anak_tab.dart';
 import 'tabs/tugas_tab.dart';
 import 'tabs/uang_saku_tab.dart';
@@ -52,15 +53,26 @@ class _ParentMainScreenState extends State<ParentMainScreen>
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: _buildAppBar(context, authProvider, parentColor),
+      floatingActionButton: _AssistantFab(onTap: _openAssistant), // <-- NEW
       body: appProvider.isLoading
           ? const Center(child: CircularProgressIndicator())
           : Column(
         children: [
           _HeaderStrip(chips: const ['2 Anak', '1 Tugas Menunggu']),
+          _AssistantBanner(onTap: _openAssistant), // <-- NEW
           _StatsGrid(),
           _buildTabBar(),
           Expanded(child: _buildTabBarView()),
         ],
+      ),
+    );
+  }
+
+  void _openAssistant() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => const AIAssistantScreen(),
+        settings: const RouteSettings(name: 'ai-assistant'),
       ),
     );
   }
@@ -93,13 +105,13 @@ class _ParentMainScreenState extends State<ParentMainScreen>
       actions: [
         IconButton(
           tooltip: 'Komunikasi',
-          onPressed: () {},
+          onPressed: _openAssistant, // quick shortcut
           icon: const Icon(Icons.message_outlined),
         ),
         IconButton(
           tooltip: 'Keluar',
           onPressed: () async {
-            final app  = context.read<AppProvider>();
+            final app = context.read<AppProvider>();
             final auth = context.read<AuthProvider>();
 
             app.clearDataOnLogout();
@@ -177,7 +189,8 @@ class _HeaderStrip extends StatelessWidget {
               borderRadius: BorderRadius.circular(20),
             ),
             child: Text(c,
-                style: const TextStyle(fontSize: 11, color: Colors.black87)),
+                style:
+                const TextStyle(fontSize: 11, color: Colors.black87)),
           ),
         )
             .toList(),
@@ -186,18 +199,104 @@ class _HeaderStrip extends StatelessWidget {
   }
 }
 
-/// Cleaner stats: neutral cards with colored icon pills
+/// Gradient banner CTA to open the assistant
+class _AssistantBanner extends StatelessWidget {
+  final VoidCallback onTap;
+  const _AssistantBanner({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
+        child: Ink(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            gradient: const LinearGradient(
+              colors: [Color(0xFF7C4DFF), Color(0xFF00BCD4)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+          ),
+          child: Row(
+            children: const [
+              _AssistantAvatar(),
+              SizedBox(width: 12),
+              Expanded(
+                child: Hero(
+                  tag: 'ai-assistant-title',
+                  child: Material(
+                    color: Colors.transparent,
+                    child: Text(
+                      'AI Assistant: ringkas pengeluaran, buat misi, dan rencana uang saku otomatis.',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                        height: 1.25,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              SizedBox(width: 8),
+              Icon(Icons.chevron_right, color: Colors.white),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AssistantAvatar extends StatelessWidget {
+  const _AssistantAvatar();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 38,
+      width: 38,
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.18),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white.withOpacity(0.28)),
+      ),
+      alignment: Alignment.center,
+      child: const Icon(Icons.smart_toy_outlined, color: Colors.white),
+    );
+  }
+}
+
+/// Floating FAB with Hero to the assistant page
+class _AssistantFab extends StatelessWidget {
+  final VoidCallback onTap;
+  const _AssistantFab({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return FloatingActionButton.extended(
+      heroTag: 'ai-fab', // or set to null to disable Hero entirely
+      onPressed: onTap,
+      icon: const Icon(Icons.smart_toy_outlined),
+      label: const Text('AI Assistant'),
+    );
+  }
+}
+
+
+/// Cleaner stats: neutral cards with colored icon pills (unchanged)
 class _StatsGrid extends StatelessWidget {
   const _StatsGrid();
 
   @override
   Widget build(BuildContext context) {
     final width = MediaQuery.of(context).size.width;
-    final aspect = width >= 900
-        ? 2.2
-        : width >= 600
-        ? 1.9
-        : 1.6;
+    final aspect = width >= 900 ? 2.2 : width >= 600 ? 1.9 : 1.6;
 
     return GridView.count(
       crossAxisCount: 2,
@@ -258,7 +357,7 @@ class InfoStatCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.white, // neutral surface
+        color: Colors.white,
         borderRadius: BorderRadius.circular(AppConstants.radiusLarge),
         border: Border.all(color: borderColor),
         boxShadow: [
@@ -272,7 +371,6 @@ class InfoStatCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Top row: title + subtle icon pill
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -293,7 +391,6 @@ class InfoStatCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 6),
-          // Big value, pinned to bottom, scales if necessary
           Expanded(
             child: Align(
               alignment: Alignment.bottomLeft,
